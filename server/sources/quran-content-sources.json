@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "notice": "Sumber tidak diaktifkan sebelum hak redistribusi dicatat dan diverifikasi oleh pengelola deployment.",
+  "sources": [
+    {
+      "edition": "id.indonesian",
+      "kind": "translation",
+      "language": "id",
+      "name": "Bahasa Indonesia",
+      "author": "Metadata penyedia wajib diverifikasi",
+      "sourceUrl": "https://api.alquran.cloud/v1/quran/id.indonesian",
+      "licenseName": "verification-required",
+      "licenseUrl": "",
+      "redistributionAllowed": false,
+      "enabled": false
+    },
+    {
+      "edition": "en.sahih",
+      "kind": "translation",
+      "language": "en",
+      "name": "English",
+      "author": "Metadata penyedia wajib diverifikasi",
+      "sourceUrl": "https://api.alquran.cloud/v1/quran/en.sahih",
+      "licenseName": "verification-required",
+      "licenseUrl": "",
+      "redistributionAllowed": false,
+      "enabled": false
+    }
+  ]
+}

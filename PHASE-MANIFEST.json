@@ -1,0 +1,54 @@
+{
+  "project": "Taysriul Qur'ani",
+  "current_phase": "TQ-06",
+  "version": "1.0.0",
+  "updated_at": "2026-08-10",
+  "scope": "pre-deployment production package",
+  "progress_percent": 100,
+  "separation_rule": "Repository, accounts, database, media, domain, deployment, and roadmap are independent from Sullamul Hifz.",
+  "phases": {
+    "TQ-01": {
+      "name": "Fondasi produk dan studio",
+      "status": "completed",
+      "percent": 20,
+      "files": ["app/page.tsx", "app/layout.tsx", "app/globals.css", "app/manifest.ts", "public/favicon.svg"]
+    },
+    "TQ-02": {
+      "name": "Mesin media inti",
+      "status": "completed",
+      "percent": 40,
+      "files": ["lib/media-core.mjs", "server/index.mjs", "server/quran-store.mjs", "services/transcriber/app.py"]
+    },
+    "TQ-03": {
+      "name": "Akun, data, media, dan pemulihan",
+      "status": "completed",
+      "percent": 65,
+      "files": ["server/database.mjs", "server/auth.mjs", "server/storage.mjs", "server/platform-api.mjs", "server/migrations/001-production.sql"]
+    },
+    "TQ-04": {
+      "name": "Alignment audio-ke-ayat dan sumber berlisensi",
+      "status": "completed",
+      "percent": 78,
+      "files": ["lib/media-core.mjs", "server/quran-store.mjs", "server/sources/quran-content-sources.json", "services/transcriber/app.py"]
+    },
+    "TQ-05": {
+      "name": "Antrean render produksi",
+      "status": "completed",
+      "percent": 90,
+      "files": ["server/render-queue.mjs", "server/render-worker.mjs", "docker-compose.coolify.yml", "Dockerfile"]
+    },
+    "TQ-06": {
+      "name": "Kolaborasi, dokumentasi, keamanan, dan rilis",
+      "status": "completed",
+      "percent": 100,
+      "files": ["app/page.tsx", "server/platform-api.mjs", "docs/SECURITY.md", "docs/OPERATIONS.md", "docs/RELEASE-CHECKLIST.md", "tests/production-core.test.mjs"]
+    }
+  },
+  "external_gates": {
+    "github_upload": "not-run-by-user-request",
+    "coolify_deployment": "not-run-by-user-request",
+    "dns_tls": "requires-deployment",
+    "real_recitation_accuracy_benchmark": "requires-production-model-and-audio-set",
+    "third_party_quran_content": "requires-license-verification-per-source"
+  }
+}
