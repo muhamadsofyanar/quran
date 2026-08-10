@@ -1,0 +1,14 @@
+.git
+.gitignore
+.sites-runtime
+.openai
+.wrangler
+.next
+dist
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
+*.zip
+upload

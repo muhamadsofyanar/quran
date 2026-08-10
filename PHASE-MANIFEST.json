@@ -1,0 +1,157 @@
+{
+  "project": "Taysriul Qur'ani",
+  "current_phase": "TQ-12",
+  "version": "1.2.0",
+  "updated_at": "2026-08-10",
+  "scope": "single-deploy production bundle with persistent media, sequence-safe alignment, professional studio, batch rendering, same-origin MinIO streaming, automatic deduplication, and on-demand multilingual translation/tafsir",
+  "progress_percent": 100,
+  "separation_rule": "Repository, accounts, database, media, domain, deployment, and roadmap are independent from Sullamul Hifz.",
+  "phases": {
+    "TQ-01": {
+      "name": "Fondasi produk dan studio",
+      "status": "completed",
+      "percent": 9,
+      "files": [
+        "app/page.tsx",
+        "app/layout.tsx",
+        "app/globals.css",
+        "app/manifest.ts"
+      ]
+    },
+    "TQ-02": {
+      "name": "Mesin media inti",
+      "status": "completed",
+      "percent": 18,
+      "files": [
+        "lib/media-core.mjs",
+        "server/index.mjs",
+        "services/transcriber/app.py"
+      ]
+    },
+    "TQ-03": {
+      "name": "Akun, data, media, dan pemulihan",
+      "status": "completed",
+      "percent": 27,
+      "files": [
+        "server/database.mjs",
+        "server/auth.mjs",
+        "server/storage.mjs",
+        "server/platform-api.mjs",
+        "server/migrations/001-production.sql"
+      ]
+    },
+    "TQ-04": {
+      "name": "Alignment audio-ke-ayat dan sumber berlisensi",
+      "status": "completed",
+      "percent": 36,
+      "files": [
+        "lib/media-core.mjs",
+        "server/quran-store.mjs",
+        "server/sources/quran-content-sources.json"
+      ]
+    },
+    "TQ-05": {
+      "name": "Antrean render produksi",
+      "status": "completed",
+      "percent": 45,
+      "files": [
+        "server/render-queue.mjs",
+        "server/render-worker.mjs",
+        "docker-compose.coolify.yml",
+        "Dockerfile"
+      ]
+    },
+    "TQ-06": {
+      "name": "Kolaborasi, dokumentasi, keamanan, dan rilis",
+      "status": "completed",
+      "percent": 55,
+      "files": [
+        "server/platform-api.mjs",
+        "docs/SECURITY.md",
+        "docs/OPERATIONS.md",
+        "tests/production-core.test.mjs"
+      ]
+    },
+    "TQ-07": {
+      "name": "Pustaka Media Qur'an",
+      "status": "completed",
+      "percent": 68,
+      "files": [
+        "app/page.tsx",
+        "app/globals.css",
+        "server/platform-api.mjs",
+        "server/storage.mjs",
+        "server/migrations/002-media-library.sql"
+      ]
+    },
+    "TQ-08": {
+      "name": "Qur'an Alignment Engine v2",
+      "status": "completed",
+      "percent": 78,
+      "files": [
+        "lib/media-core.mjs",
+        "server/quran-store.mjs",
+        "tests/media-core.test.mjs"
+      ]
+    },
+    "TQ-09": {
+      "name": "Studio Qur'an Profesional",
+      "status": "completed",
+      "percent": 87,
+      "files": [
+        "app/page.tsx",
+        "app/globals.css"
+      ]
+    },
+    "TQ-10": {
+      "name": "Render dan Produksi Massal",
+      "status": "completed",
+      "percent": 95,
+      "files": [
+        "app/page.tsx",
+        "server/render-queue.mjs",
+        "server/render-worker.mjs",
+        "server/platform-api.mjs"
+      ]
+    },
+    "TQ-11": {
+      "name": "Production Hardening, observability, recovery, dan test",
+      "status": "completed",
+      "percent": 98,
+      "files": [
+        "server/database.mjs",
+        "server/platform-api.mjs",
+        "server/migrations/002-media-library.sql",
+        "tests/deployment.test.mjs",
+        "docs/OPERATIONS.md",
+        "docs/RELEASE-CHECKLIST.md"
+      ]
+    },
+    "TQ-12": {
+      "name": "Multilingual Content, Media Stability, dan Single-Deploy Consolidation",
+      "status": "completed",
+      "percent": 100,
+      "files": [
+        "server/quran-store.mjs",
+        "server/sources/quran-content-sources.json",
+        "server/migrations/003-content-and-dedupe.sql",
+        "server/platform-api.mjs",
+        "server/storage.mjs",
+        "server/index.mjs",
+        "app/page.tsx",
+        "app/globals.css",
+        "lib/media-core.mjs",
+        "tests/production-core.test.mjs",
+        "tests/deployment.test.mjs"
+      ]
+    }
+  },
+  "runtime_gates": {
+    "coolify_redeploy": "required-once-after-upload",
+    "database_migration_003": "automatic-on-start",
+    "real_recitation_accuracy_benchmark": "requires-user-audio-set",
+    "quranenc_content": "on-demand, version-aware, attribution-preserving, and source text locked against modification",
+    "media_download": "same-origin application stream; browser never receives internal MinIO hostname",
+    "font_render_consistency": "preview and canvas use the same Arabic font stack and weight; renderer waits for browser fonts before first frame"
+  }
+}

@@ -1,0 +1,230 @@
+# @phase TQ-05 — complete production stack for a Coolify Docker Compose resource.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    environment: &app-environment
+      NODE_ENV: production
+      PORT: "3000"
+
+      APP_URL: "${APP_URL:-https://taysriulqurani.id}"
+      TQ_ALLOWED_ORIGINS: "${TQ_ALLOWED_ORIGINS:-https://taysriulqurani.id}"
+
+      TQ_DATA_DIR: /app/data
+      TQ_REQUIRE_DATABASE: "true"
+      TQ_ALLOW_SIGNUP: "${TQ_ALLOW_SIGNUP:-true}"
+      TQ_SESSION_DAYS: "${TQ_SESSION_DAYS:-14}"
+
+      TQ_IP_HASH_SALT: "${TQ_IP_HASH_SALT}"
+      TQ_ADMIN_TOKEN: "${TQ_ADMIN_TOKEN}"
+
+      DATABASE_URL: "postgresql://taysriul:${POSTGRES_PASSWORD}@postgres:5432/taysriul_qurani"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+
+      TQ_STORAGE_DRIVER: s3
+      S3_ENDPOINT: "http://minio:9000"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      S3_BUCKET: "${S3_BUCKET:-taysriul-qurani-media}"
+      S3_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      S3_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      S3_FORCE_PATH_STYLE: "true"
+      TQ_S3_AUTO_CREATE_BUCKET: "true"
+
+      TQ_SIGNED_URL_SECONDS: "${TQ_SIGNED_URL_SECONDS:-600}"
+
+      TQ_QURAN_AUTO_SYNC: "${TQ_QURAN_AUTO_SYNC:-true}"
+      TQ_QURAN_SOURCE_URL: "${TQ_QURAN_SOURCE_URL:-https://api.alquran.cloud/v1/quran/quran-uthmani}"
+      TQ_QURAN_CONTENT_SOURCES_JSON: "${TQ_QURAN_CONTENT_SOURCES_JSON:-}"
+      TQ_QURANENC_DISCOVERY: "${TQ_QURANENC_DISCOVERY:-true}"
+      TQ_CONTENT_CACHE_SECONDS: "${TQ_CONTENT_CACHE_SECONDS:-604800}"
+
+      TQ_TRANSCRIBE_URL: "http://transcriber:8000/v1/audio/transcriptions"
+      TQ_TRANSCRIBE_MODEL: "${WHISPER_MODEL:-small}"
+
+      TQ_MAX_UPLOAD_BYTES: "${TQ_MAX_UPLOAD_BYTES:-536870912}"
+      TQ_FFMPEG_PRESET: "${TQ_FFMPEG_PRESET:-medium}"
+      TQ_FFMPEG_CRF: "${TQ_FFMPEG_CRF:-20}"
+      TQ_RENDER_ATTEMPTS: "${TQ_RENDER_ATTEMPTS:-3}"
+
+    expose:
+      - "3000"
+
+    volumes:
+      - tq-data:/app/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      transcriber:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/media-api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 45s
+
+
+  render-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    command:
+      - node
+      - server/render-worker.mjs
+
+    environment:
+      <<: *app-environment
+      TQ_RENDER_CONCURRENCY: "${TQ_RENDER_CONCURRENCY:-1}"
+
+    volumes:
+      - tq-data:/app/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+    # Worker tidak membuka port 3000.
+    # Nonaktifkan healthcheck bawaan dari image app.
+    healthcheck:
+      disable: true
+
+
+  transcriber:
+    build:
+      context: ./services/transcriber
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    environment:
+      WHISPER_MODEL: "${WHISPER_MODEL:-small}"
+      WHISPER_DEVICE: "${WHISPER_DEVICE:-cpu}"
+      WHISPER_COMPUTE_TYPE: "${WHISPER_COMPUTE_TYPE:-int8}"
+      WHISPER_CPU_THREADS: "${WHISPER_CPU_THREADS:-4}"
+      WHISPER_BEAM_SIZE: "${WHISPER_BEAM_SIZE:-5}"
+      WHISPER_MAX_UPLOAD_BYTES: "${TQ_MAX_UPLOAD_BYTES:-536870912}"
+      WHISPER_DOWNLOAD_ROOT: /models/whisper
+
+    expose:
+      - "8000"
+
+    volumes:
+      - tq-models:/models
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  postgres:
+    image: postgres:17.10-alpine3.24
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: taysriul_qurani
+      POSTGRES_USER: taysriul
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+    volumes:
+      - tq-postgres:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U taysriul -d taysriul_qurani
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  redis:
+    image: redis:7.4.10-alpine
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - "${REDIS_PASSWORD}"
+
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+
+    volumes:
+      - tq-redis:/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    restart: unless-stopped
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+
+    volumes:
+      - tq-minio:/data
+
+    expose:
+      - "9000"
+      - "9001"
+
+    healthcheck:
+      test:
+        - CMD
+        - mc
+        - ready
+        - local
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+
+volumes:
+  tq-data:
+  tq-models:
+  tq-postgres:
+  tq-redis:
+  tq-minio:
