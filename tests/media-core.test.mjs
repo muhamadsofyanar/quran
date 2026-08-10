@@ -42,3 +42,23 @@ test("alignment menjaga urutan, mengenali pengulangan, dan membawa timestamp kat
   assert.equal(aligned[2].ayah.ayah, 2);
   assert.equal(aligned[2].words[0].confidence, 98);
 });
+
+test("alignment menolak nomor ayat ilegal dan tidak bergerak mundur", () => {
+  const corpus = [
+    { globalNumber: 0, surah: "Rusak", surahNumber: 1, ayah: -1, arabic: "الحمد لله رب العالمين" },
+    { globalNumber: 1, surah: "Al-Fatihah", surahNumber: 1, ayah: 1, arabic: "بسم الله الرحمن الرحيم" },
+    { globalNumber: 2, surah: "Al-Fatihah", surahNumber: 1, ayah: 2, arabic: "الحمد لله رب العالمين" },
+    { globalNumber: 3, surah: "Al-Fatihah", surahNumber: 1, ayah: 3, arabic: "الرحمن الرحيم" },
+  ];
+  const aligned = alignTranscriptSequence([
+    { text: "بسم الله الرحمن الرحيم", start: 0, end: 3 },
+    { text: "الحمد لله رب العالمين", start: 3, end: 7 },
+    { text: "الرحمن الرحيم", start: 7, end: 10 },
+  ], corpus, { allowBacktrack: false });
+  assert.deepEqual(aligned.filter((item) => item.matched).map((item) => item.ayah.ayah), [1, 2, 3]);
+  assert.ok(aligned.every((item) => !item.matched || item.ayah.ayah >= 1));
+});
+
+test("ASS memakai escape newline standar", () => {
+  assert.match(buildAss([{ start: 0, end: 1, arabic: "آية", translation: "baris satu\nbaris dua" }]), /baris satu\\Nbaris dua/);
+});

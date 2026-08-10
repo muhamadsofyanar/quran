@@ -1,15 +1,28 @@
-# Matriks Fungsi v1.0
+# Matriks Fungsi v1.1.0
 
-| Tahap VIDEO QURAN | Implementasi v1.0 | Status |
+| Fungsi produksi | Implementasi | Status source |
 |---|---|---|
-| 1. Transkripsi murottal | faster-whisper lokal, VAD, timestamp segmen/kata | Siap runtime |
-| 2. Konfirmasi surah/ayat | alignment urut, pengulangan, alternatif, confidence, human review | Nyata |
-| 3. Subtitle Arab | SRT, VTT, ASS | Nyata |
-| 4. Subtitle terjemahan | terjemahan atau gabungan; sumber berlisensi | Nyata setelah sumber aktif |
-| 5. Latar | gambar/video, rasio, resolusi, pratinjau | Nyata |
-| 6. Render | WebM browser, antrean Redis, worker MP4 H.264/AAC | Nyata |
-| 7. Penyimpanan | PostgreSQL + S3/local + autosave versi | Nyata |
-| 8. Kolaborasi | peran, komentar waktu, persetujuan, audit | Nyata |
-| 9. Pemulihan | backup metadata, restore proyek, panduan pg_dump/S3 | Nyata |
-
-“Siap runtime” berarti kode dan konfigurasi selesai tetapi membutuhkan container, model, dan data eksternal pada deployment.
+| Audio satu surah | Pustaka Media + marker ayat non-destruktif | Siap |
+| Audio per ayat | Metadata `scope=ayah`, konvensi nama, reuse asset | Siap |
+| Pustaka Media | list/search/filter/reuse/archive/download/stream | Siap |
+| Persistensi media | PostgreSQL metadata + MinIO/S3/local object | Siap |
+| Reload media proyek | `audioAssetId`/`backgroundAssetId` dimuat kembali | Siap |
+| Transkripsi | faster-whisper lokal, Arabic, word timestamps | Siap runtime |
+| Alignment | urutan, invalid-ayah guard, confidence, repeat coalescing | Siap |
+| Korpus | 114/6236/30/604/240 + SHA-256 | Siap runtime |
+| Pustaka 114 surah | endpoint indeks + pencarian UI | Siap |
+| Studio | waveform nyata, playhead, seek cue, zoom, fullscreen | Siap |
+| Edit | time fields, undo/redo, verifikasi manusia | Siap |
+| Desain | Mushaf v1/v2 UI, 3 preset, watermark, latar | Siap |
+| Subtitle | SRT/VTT/ASS Arab/terjemahan/gabungan | Siap |
+| Render per ayat | capture rentang ayat terpilih | Siap |
+| Render per surah | seluruh timeline proyek | Siap |
+| Batch rasio | 16:9 + 9:16 + 1:1 berurutan | Siap |
+| Queue | Redis/BullMQ, progress, retry | Siap |
+| Cancel | queued langsung; processing checkpoint FFmpeg | Siap |
+| Output | MP4 H.264/AAC kembali ke Pustaka Media | Siap |
+| Kolaborasi | owner/editor/reviewer/viewer | Siap |
+| Audit/approval | komentar waktu, approval, append-only audit | Siap |
+| Backup | project/review/media manifest/render manifest | Siap |
+| Migration | 001 + 002 berurutan dan idempotent | Siap |
+| Hardening upload | MIME + magic signature + size + rate limit | Siap |

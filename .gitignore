@@ -40,9 +40,7 @@ next-env.d.ts
 /.wrangler/
 /.sites-runtime/
 /.openai/
-/.vinext/*
-!/.vinext/fonts/
-!/.vinext/fonts/**
+/.vinext/
 /data/
 /outputs/
 /work/

@@ -1,4 +1,4 @@
-// @phase TQ-04 — validated Qur'an corpus plus license-gated content editions.
+// @phase TQ-04/TQ-08 — validated Qur'an corpus, index, and license-gated content editions.
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -138,6 +138,11 @@ export async function getSurah(number) {
   const surah = corpus.surahs.find((item) => item.number === surahNumber);
   if (!surah) return null;
   return { ...surah, ayahs: corpus.ayahs.filter((item) => item.surahNumber === surahNumber) };
+}
+
+export async function listSurahs() {
+  const corpus = await readCorpus();
+  return corpus.surahs.map((surah) => ({ ...surah }));
 }
 
 export async function listContentSources() {

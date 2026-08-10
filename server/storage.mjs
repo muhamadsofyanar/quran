@@ -1,10 +1,10 @@
-// @phase TQ-03 — local or S3-compatible media storage with checksums.
+// @phase TQ-03/TQ-07/TQ-11 — local or S3-compatible media storage with checksums and protected deletion.
 
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CreateBucketCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const localRoot = () => path.join(process.env.TQ_DATA_DIR || path.join(process.cwd(), "data"), "media");
@@ -57,13 +57,13 @@ export async function getBuffer(key) {
   return readFile(path.join(localRoot(), resolved));
 }
 
-export async function getDownload(key, filename, contentType) {
+export async function getDownload(key, filename, contentType, disposition = "attachment") {
   const resolved = safeKey(key);
   if (driver() === "s3") {
     const url = await getSignedUrl(s3Client(), new GetObjectCommand({
       Bucket: process.env.S3_BUCKET,
       Key: resolved,
-      ResponseContentDisposition: `attachment; filename="${String(filename).replace(/["\r\n]/g, "")}"`,
+      ResponseContentDisposition: `${disposition === "inline" ? "inline" : "attachment"}; filename="${String(filename).replace(/["\r\n]/g, "")}"`,
       ResponseContentType: contentType,
     }), { expiresIn: Math.min(3600, Math.max(60, Number(process.env.TQ_SIGNED_URL_SECONDS || 600))) });
     return { redirect: url };
@@ -71,6 +71,17 @@ export async function getDownload(key, filename, contentType) {
   const target = path.join(localRoot(), resolved);
   const info = await stat(target);
   return { stream: createReadStream(target), sizeBytes: info.size };
+}
+
+export async function deleteObject(key) {
+  const resolved = safeKey(key);
+  if (driver() === "s3") {
+    await s3Client().send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: resolved }));
+    return true;
+  }
+  const { unlink } = await import("node:fs/promises");
+  await unlink(path.join(localRoot(), resolved)).catch((error) => { if (error?.code !== "ENOENT") throw error; });
+  return true;
 }
 
 export async function storageStatus() {

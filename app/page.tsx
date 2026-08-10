@@ -1,6 +1,6 @@
 "use client";
 
-// @phase TQ-03/TQ-06 — independent production studio with accounts and autosave.
+// @phase TQ-03/TQ-06/TQ-07/TQ-09/TQ-10/TQ-11 — independent production studio with persistent media, review, and rendering.
 
 import {
   ChangeEvent,
@@ -13,10 +13,22 @@ import {
 } from "react";
 import { buildAss, buildSrt, buildVtt } from "../lib/media-core.mjs";
 
-type View = "home" | "projects" | "studio" | "quran" | "renders" | "settings";
+type View = "home" | "projects" | "studio" | "media" | "quran" | "renders" | "settings";
 type StudioStep = "source" | "sync" | "design" | "review" | "render";
 type Ratio = "16:9" | "9:16" | "1:1";
 type ProjectStatus = "draft" | "review" | "ready";
+type ProjectFilter = "all" | ProjectStatus;
+type SettingsTab = "identity" | "transcription" | "quran" | "render" | "security";
+
+type QuranPreview = {
+  number?: number;
+  nameArabic?: string;
+  nameLatin?: string;
+  nameTranslation?: string;
+  revelationType?: string;
+  ayahCount?: number;
+  ayahs?: { ayah?: number; arabic?: string }[];
+};
 
 type Segment = {
   id: string;
@@ -65,7 +77,7 @@ type ServerCapabilities = {
   transcriptionModel?: string | null;
   quran: { available: boolean; counts?: { surahs: number; ayahs: number; pages: number; juz: number; rubus: number }; checksum?: string };
   maxUploadBytes?: number;
-  persistence?: { configured: boolean; healthy: boolean; database?: string };
+  persistence?: { configured: boolean; healthy: boolean; database?: string; migration?: string | null };
   storage?: { driver: string; configured: boolean; healthy: boolean };
   queue?: { configured: boolean; healthy: boolean };
   collaboration?: boolean;
@@ -83,6 +95,35 @@ type AlignedPart = { matched: boolean; confidence: number; repeated?: boolean; s
 type ReviewComment = { id: string; at_seconds: number; body: string; display_name: string; resolved_at?: string | null; created_at: string };
 type ContentSource = { edition: string; kind: string; language: string; name: string; author?: string; licenseName: string; enabled: boolean; redistributionAllowed: boolean };
 type WorkspaceMember = { id: string; email: string; display_name: string; role: "owner" | "editor" | "reviewer" | "viewer" };
+
+type MediaAsset = {
+  id: string;
+  projectId?: string | null;
+  kind: "audio" | "background" | "render-input" | "render-output" | "logo" | "other";
+  originalName: string;
+  contentType: string;
+  sizeBytes: number;
+  checksum: string;
+  scope: "generic" | "surah" | "ayah";
+  surahNumber?: number | null;
+  ayahStart?: number | null;
+  ayahEnd?: number | null;
+  qari?: string | null;
+  durationSeconds?: number | null;
+  analysisStatus: "pending" | "analyzing" | "analyzed" | "needs-review" | "failed";
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  downloadUrl: string;
+  streamUrl: string;
+};
+
+type QuranLibraryRow = {
+  number: number;
+  name: string;
+  arabic: string;
+  meaning: string;
+  ayahs: number;
+};
 
 const STORAGE_KEY = "taysriul-qurani-v0.1";
 
@@ -149,6 +190,7 @@ const navItems: { id: View; label: string; hint: string; icon: IconName }[] = [
   { id: "home", label: "Beranda", hint: "Ringkasan", icon: "home" },
   { id: "projects", label: "Proyek", hint: "Karya Anda", icon: "folder" },
   { id: "studio", label: "Studio", hint: "Ruang kerja", icon: "studio" },
+  { id: "media", label: "Pustaka Media", hint: "Audio & hasil", icon: "layers" },
   { id: "quran", label: "Sumber Qur'an", hint: "Korpus & tafsir", icon: "book" },
   { id: "renders", label: "Render", hint: "Antrean video", icon: "play" },
 ];
@@ -159,6 +201,15 @@ const studioSteps: { id: StudioStep; label: string; index: string }[] = [
   { id: "design", label: "Desain", index: "03" },
   { id: "review", label: "Pemeriksaan", index: "04" },
   { id: "render", label: "Render", index: "05" },
+];
+
+const quranLibraryFallbackRows: QuranLibraryRow[] = [
+  { number: 1, name: "Al-Fatihah", arabic: "الفاتحة", meaning: "Pembukaan", ayahs: 7 },
+  { number: 2, name: "Al-Baqarah", arabic: "البقرة", meaning: "Sapi Betina", ayahs: 286 },
+  { number: 3, name: "Ali 'Imran", arabic: "آل عمران", meaning: "Keluarga Imran", ayahs: 200 },
+  { number: 4, name: "An-Nisa'", arabic: "النساء", meaning: "Wanita", ayahs: 176 },
+  { number: 5, name: "Al-Ma'idah", arabic: "المائدة", meaning: "Hidangan", ayahs: 120 },
+  { number: 6, name: "Al-An'am", arabic: "الأنعام", meaning: "Binatang Ternak", ayahs: 165 },
 ];
 
 type IconName =
@@ -227,6 +278,14 @@ function formatDuration(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60);
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
+}
+
+function formatBytes(bytes: number) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function relativeDate(date: string) {
@@ -301,9 +360,11 @@ export default function Home() {
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioFile, setAudioFile] = useState<File>();
   const [audioName, setAudioName] = useState<string>();
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(waveform);
   const [backgroundUrl, setBackgroundUrl] = useState<string>();
   const [backgroundFile, setBackgroundFile] = useState<File>();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playheadTime, setPlayheadTime] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -311,9 +372,31 @@ export default function Home() {
   const [capabilities, setCapabilities] = useState<ServerCapabilities>({ ffmpeg: false, transcription: false, quran: { available: false } });
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectRatio, setNewProjectRatio] = useState<Ratio>("16:9");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("identity");
+  const [quranQuery, setQuranQuery] = useState("");
+  const [quranRows, setQuranRows] = useState<QuranLibraryRow[]>(quranLibraryFallbackRows);
+  const [showEnabledSourcesOnly, setShowEnabledSourcesOnly] = useState(false);
+  const [quranPreview, setQuranPreview] = useState<QuranPreview>();
+  const [quranPreviewLoading, setQuranPreviewLoading] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(100);
+  const [designPreset, setDesignPreset] = useState<"classic" | "minimal" | "cinematic">("classic");
+  const [watermarkText, setWatermarkText] = useState("TAYSRiUL QUR'ANI");
+  const [renderScope, setRenderScope] = useState<"surah" | "ayah">("surah");
+  const undoStack = useRef<Project[]>([]);
+  const redoStack = useRef<Project[]>([]);
   const [toast, setToast] = useState<string>();
   const [saveState, setSaveState] = useState<"saved" | "saving">("saved");
   const [renderJobs, setRenderJobs] = useState<RenderJob[]>([]);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [mediaQuery, setMediaQuery] = useState("");
+  const [mediaKind, setMediaKind] = useState<"all" | MediaAsset["kind"]>("all");
+  const [mediaScope, setMediaScope] = useState<"all" | MediaAsset["scope"]>("all");
+  const [mediaBusyId, setMediaBusyId] = useState<string>();
+  const [loadedAudioAssetId, setLoadedAudioAssetId] = useState<string>();
+  const [loadedBackgroundAssetId, setLoadedBackgroundAssetId] = useState<string>();
   const [session, setSession] = useState<SessionInfo>({ authenticated: false });
   const [sessionMode, setSessionMode] = useState<"checking" | "local" | "guest" | "authenticated">("checking");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -329,6 +412,8 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const previewStageRef = useRef<HTMLDivElement>(null);
+  const mediaUploadRef = useRef<HTMLInputElement>(null);
   const hydrated = useRef(false);
   const serverSnapshots = useRef(new Map<string, string>());
   const activeProject = useMemo(
@@ -339,150 +424,212 @@ export default function Home() {
     () => activeProject?.segments.find((segment) => segment.id === selectedSegmentId) ?? activeProject?.segments[0],
     [activeProject, selectedSegmentId],
   );
+  const filteredProjects = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase();
+    return projects.filter((project) => {
+      const matchesStatus = projectFilter === "all" || project.status === projectFilter;
+      const matchesQuery = !query || project.title.toLowerCase().includes(query);
+      return matchesStatus && matchesQuery;
+    });
+  }, [projectFilter, projectQuery, projects]);
+  const filteredQuranRows = useMemo(() => {
+    const query = quranQuery.trim().toLowerCase();
+    if (!query) return quranRows;
+    return quranRows.filter((surah) =>
+      String(surah.number) === query ||
+      surah.name.toLowerCase().includes(query) ||
+      surah.arabic.includes(quranQuery.trim()),
+    );
+  }, [quranQuery, quranRows]);
+  const visibleContentSources = useMemo(
+    () => showEnabledSourcesOnly ? contentSources.filter((source) => source.enabled && source.redistributionAllowed) : contentSources,
+    [contentSources, showEnabledSourcesOnly],
+  );
+  const filteredMediaAssets = useMemo(() => {
+    const query = mediaQuery.trim().toLowerCase();
+    return mediaAssets.filter((asset) => {
+      const kindOk = mediaKind === "all" || asset.kind === mediaKind;
+      const scopeOk = mediaScope === "all" || asset.scope === mediaScope;
+      const queryOk = !query || asset.originalName.toLowerCase().includes(query) || String(asset.surahNumber || "").includes(query) || String(asset.qari || "").toLowerCase().includes(query);
+      return kindOk && scopeOk && queryOk;
+    });
+  }, [mediaAssets, mediaKind, mediaQuery, mediaScope]);
 
-  useEffect(() => {
+
+  async function refreshMediaLibrary() {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as { projects?: Project[]; renderJobs?: RenderJob[] };
-        if (parsed.projects?.length) {
-          // Hydration is client-only because this studio stores drafts locally.
-          setProjects(parsed.projects);
-          setActiveProjectId(parsed.projects[0].id);
-        }
-        if (parsed.renderJobs) setRenderJobs(parsed.renderJobs);
-      }
-      const hash = window.location.hash.replace("#", "") as View;
-      if (navItems.some((item) => item.id === hash) || hash === "settings") setView(hash);
-    } catch {
-      // Keep the clean sample workspace if old local data cannot be parsed.
+      const response = await fetch("/api/v1/assets", { headers: { "x-tq-workspace": session.workspaces[0].id } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Pustaka media tidak dapat dimuat.");
+      setMediaAssets(payload.assets || []);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Pustaka media tidak dapat dimuat.");
     }
-    hydrated.current = true;
-    fetch("/media-api/capabilities")
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then(async (payload: ServerCapabilities) => {
-        setCapabilities(payload);
-        fetch("/media-api/quran/content/sources").then((response) => response.ok ? response.json() : Promise.reject()).then((content) => setContentSources(content.sources || [])).catch(() => {});
-        if (!payload.persistence?.configured) return setSessionMode("local");
-        const response = await fetch("/api/v1/auth/session");
-        const account = await response.json() as SessionInfo;
-        setSession(account);
-        setSessionMode(account.authenticated ? "authenticated" : "guest");
-      })
-      .catch(() => {
-        setCapabilities({ ffmpeg: false, transcription: false, quran: { available: false } });
-        setSessionMode("local");
-      });
-  }, []);
+  }
 
-  useEffect(() => {
+  async function patchMediaAsset(assetId: string, patch: Record<string, unknown>, quiet = false) {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return null;
+    const response = await fetch(`/api/v1/assets/${assetId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-tq-workspace": session.workspaces[0].id },
+      body: JSON.stringify(patch),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Metadata media gagal diperbarui.");
+    if (!quiet) setToast("Metadata media diperbarui.");
+    await refreshMediaLibrary();
+    return payload.asset as MediaAsset;
+  }
+
+  async function loadAudioAsset(assetId: string, quiet = false) {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
-    fetch("/api/v1/projects", { headers: { "x-tq-workspace": session.workspaces[0].id } })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Proyek server tidak dapat dimuat.");
-        const loaded = (payload.projects || []).map((project: Project & { version?: number }) => ({ ...project, serverVersion: project.version || project.serverVersion }));
-        serverSnapshots.current = new Map(loaded.map((project: Project) => [project.id, JSON.stringify({ title: project.title, state: projectState(project) })]));
-        if (loaded.length) {
-          setProjects(loaded);
-          setActiveProjectId(loaded[0].id);
-          setSelectedSegmentId(loaded[0].segments?.[0]?.id || "");
-        } else {
-          setProjects([]);
-        }
-      })
-      .catch((error) => setToast(error.message));
-  }, [session, sessionMode]);
+    const asset = mediaAssets.find((item) => item.id === assetId);
+    try {
+      const streamUrl = asset?.streamUrl || `/api/v1/assets/${assetId}/download?workspace=${encodeURIComponent(session.workspaces[0].id)}&disposition=inline`;
+      const response = await fetch(streamUrl, { headers: { "x-tq-workspace": session.workspaces[0].id } });
+      if (!response.ok) throw new Error("Audio tersimpan tidak dapat dimuat.");
+      const blob = await response.blob();
+      const name = asset?.originalName || activeProject?.audioName || "audio-quran.mp3";
+      const file = new File([blob], name, { type: asset?.contentType || blob.type || "audio/mpeg" });
+      if (audioUrl?.startsWith("blob:")) URL.revokeObjectURL(audioUrl);
+      setAudioFile(file);
+      setAudioName(name);
+      setAudioUrl(URL.createObjectURL(file));
+      setLoadedAudioAssetId(assetId);
+      if (!quiet) setToast("Audio dimuat dari Pustaka Media.");
+    } catch (error) {
+      if (!quiet) setToast(error instanceof Error ? error.message : "Audio tersimpan tidak dapat dimuat.");
+    }
+  }
 
-  useEffect(() => {
-    if (!hydrated.current) return;
-    setSaveState("saving");
-    const timer = window.setTimeout(() => {
-      const persistentJobs = renderJobs.map((job) => ({ ...job, outputUrl: undefined }));
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ projects, renderJobs: persistentJobs }));
-      setSaveState("saved");
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [projects, renderJobs]);
-
-  useEffect(() => {
+  async function loadBackgroundAsset(assetId: string, quiet = false) {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
-    const dirty = projects.filter((project) => project.serverVersion && serverSnapshots.current.get(project.id) !== JSON.stringify({ title: project.title, state: projectState(project) }));
-    if (!dirty.length) return;
-    setSaveState("saving");
-    const timer = window.setTimeout(async () => {
-      for (const project of dirty) {
-        const snapshot = JSON.stringify({ title: project.title, state: projectState(project) });
-        try {
-          const response = await fetch(`/api/v1/projects/${project.id}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json", "if-match": String(project.serverVersion), "x-tq-workspace": session.workspaces![0].id },
-            body: JSON.stringify({ title: project.title, version: project.serverVersion, state: projectState(project) }),
-          });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "Autosave server gagal.");
-          serverSnapshots.current.set(project.id, snapshot);
-          setProjects((items) => items.map((item) => item.id === project.id ? { ...item, serverVersion: payload.project.version } : item));
-        } catch (error) {
-          setToast(error instanceof Error ? error.message : "Autosave server gagal.");
-        }
+    const asset = mediaAssets.find((item) => item.id === assetId);
+    try {
+      const streamUrl = asset?.streamUrl || `/api/v1/assets/${assetId}/download?workspace=${encodeURIComponent(session.workspaces[0].id)}&disposition=inline`;
+      const response = await fetch(streamUrl, { headers: { "x-tq-workspace": session.workspaces[0].id } });
+      if (!response.ok) throw new Error("Latar tersimpan tidak dapat dimuat.");
+      const blob = await response.blob();
+      const name = asset?.originalName || "background";
+      const file = new File([blob], name, { type: asset?.contentType || blob.type || "image/jpeg" });
+      if (backgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(backgroundUrl);
+      setBackgroundFile(file);
+      setBackgroundUrl(URL.createObjectURL(file));
+      setLoadedBackgroundAssetId(assetId);
+      if (!quiet) setToast("Latar dimuat dari Pustaka Media.");
+    } catch (error) {
+      if (!quiet) setToast(error instanceof Error ? error.message : "Latar tersimpan tidak dapat dimuat.");
+    }
+  }
+
+  async function useMediaAsset(asset: MediaAsset) {
+    if (!activeProject) return setToast("Buat atau buka proyek terlebih dahulu.");
+    if (asset.kind === "audio") {
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, audioAssetId: asset.id, audioName: asset.originalName, duration: asset.durationSeconds || project.duration, updatedAt: new Date().toISOString() } : project));
+      await loadAudioAsset(asset.id);
+      setStudioStep("source");
+      navigate("studio");
+      return;
+    }
+    if (asset.kind === "background" || asset.kind === "logo") {
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, backgroundAssetId: asset.id, updatedAt: new Date().toISOString() } : project));
+      await loadBackgroundAsset(asset.id);
+      setStudioStep("design");
+      navigate("studio");
+      return;
+    }
+    if (asset.kind === "render-output") {
+      window.open(asset.downloadUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  async function archiveMediaAsset(asset: MediaAsset) {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    if (!window.confirm(`Arsipkan ${asset.originalName}? Berkas tidak dihapus permanen.`)) return;
+    setMediaBusyId(asset.id);
+    try {
+      const response = await fetch(`/api/v1/assets/${asset.id}`, { method: "DELETE", headers: { "x-tq-workspace": session.workspaces[0].id } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Media gagal diarsipkan.");
+      await refreshMediaLibrary();
+      setToast("Media dipindahkan ke arsip.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Media gagal diarsipkan.");
+    } finally {
+      setMediaBusyId(undefined);
+    }
+  }
+
+  async function editMediaMetadata(asset: MediaAsset) {
+    const originalName = window.prompt("Nama media:", asset.originalName);
+    if (originalName === null) return;
+    const qari = window.prompt("Nama qari (boleh kosong):", asset.qari || "");
+    if (qari === null) return;
+    const surahInput = window.prompt("Nomor surah 1-114 (kosong = umum):", asset.surahNumber ? String(asset.surahNumber) : "");
+    if (surahInput === null) return;
+    const surahNumber = surahInput.trim() ? Math.max(1, Math.min(114, Number(surahInput) || 1)) : null;
+    let scope: MediaAsset["scope"] = asset.scope;
+    let ayahStart: number | null = asset.ayahStart || null;
+    let ayahEnd: number | null = asset.ayahEnd || null;
+    if (surahNumber) {
+      const ayahInput = window.prompt("Nomor ayat (kosong = satu surah penuh):", asset.scope === "ayah" && asset.ayahStart ? String(asset.ayahStart) : "");
+      if (ayahInput === null) return;
+      if (ayahInput.trim()) {
+        ayahStart = Math.max(1, Number(ayahInput) || 1);
+        ayahEnd = ayahStart;
+        scope = "ayah";
+      } else {
+        ayahStart = 1;
+        ayahEnd = asset.ayahEnd || null;
+        scope = "surah";
       }
-      setSaveState("saved");
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [projects, session, sessionMode]);
+    } else {
+      scope = "generic";
+      ayahStart = null;
+      ayahEnd = null;
+    }
+    try {
+      await patchMediaAsset(asset.id, { originalName: originalName.trim() || asset.originalName, qari, surahNumber, ayahStart, ayahEnd, scope });
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Metadata media gagal diperbarui.");
+    }
+  }
 
-  useEffect(() => {
-    if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !capabilities.queue?.healthy) return;
-    let active = true;
-    const refresh = () => fetch("/api/v1/render-jobs", { headers: { "x-tq-workspace": session.workspaces![0].id } })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Antrean render tidak dapat dimuat.");
-        if (!active) return;
-        setRenderJobs((payload.jobs || []).map((job: {
-          id: string; project_id: string; status: RenderJob["status"]; progress: number; preset?: { title?: string; ratio?: Ratio; resolution?: string }; output_asset_id?: string; error?: string;
-        }) => ({
-          id: job.id,
-          projectId: job.project_id,
-          title: job.preset?.title || "Video Qur'an",
-          ratio: job.preset?.ratio || "16:9",
-          resolution: job.preset?.resolution || "1080p",
-          status: job.status,
-          progress: job.progress,
-          format: "MP4",
-          outputUrl: job.output_asset_id ? `/api/v1/assets/${job.output_asset_id}/download?workspace=${session.workspaces![0].id}` : undefined,
-          error: job.error,
-        })));
-      }).catch(() => {});
-    void refresh();
-    const timer = window.setInterval(refresh, 3000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [capabilities.queue?.healthy, session, sessionMode]);
+  async function uploadLibraryMedia(file?: File, refreshAfter = true) {
+    if (!file || sessionMode !== "authenticated" || !session.workspaces?.[0]) return false;
+    const kind: MediaAsset["kind"] = file.type.startsWith("audio/") ? "audio" : file.type.startsWith("image/") || file.type.startsWith("video/") ? "background" : "other";
+    try {
+      const response = await fetch(`/api/v1/assets?kind=${encodeURIComponent(kind)}`, {
+        method: "POST",
+        headers: { "content-type": file.type || "application/octet-stream", "x-file-name": file.name, "x-tq-workspace": session.workspaces[0].id },
+        body: file,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Unggah media gagal.");
+      if (refreshAfter) {
+        await refreshMediaLibrary();
+        setToast("Media ditambahkan ke Pustaka Media.");
+      }
+      return true;
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Unggah media gagal.");
+      return false;
+    } finally {
+      if (refreshAfter && mediaUploadRef.current) mediaUploadRef.current.value = "";
+    }
+  }
 
-  useEffect(() => {
-    if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !activeProject?.serverVersion) return;
-    fetch(`/api/v1/comments?projectId=${encodeURIComponent(activeProject.id)}`, { headers: { "x-tq-workspace": session.workspaces[0].id } })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (response.ok) setComments(payload.comments || []);
-      }).catch(() => {});
-  }, [activeProject?.id, activeProject?.serverVersion, session, sessionMode]);
-
-  useEffect(() => {
-    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
-    fetch("/api/v1/members", { headers: { "x-tq-workspace": session.workspaces[0].id } })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (response.ok) setMembers(payload.members || []);
-      }).catch(() => {});
-  }, [session, sessionMode]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(undefined), 3200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  async function uploadLibraryFiles(files: File[]) {
+    if (!files.length) return;
+    let uploaded = 0;
+    for (const file of files.slice(0, 200)) {
+      if (await uploadLibraryMedia(file, false)) uploaded += 1;
+    }
+    await refreshMediaLibrary();
+    if (mediaUploadRef.current) mediaUploadRef.current.value = "";
+    setToast(`${uploaded} dari ${Math.min(files.length, 200)} media berhasil ditambahkan.`);
+  }
 
   function navigate(next: View) {
     setView(next);
@@ -499,6 +646,51 @@ export default function Home() {
     navigate("studio");
   }
 
+  function goToNextStudioStep() {
+    const index = studioSteps.findIndex((step) => step.id === studioStep);
+    if (index < 0) return;
+    if (index < studioSteps.length - 1) {
+      setStudioStep(studioSteps[index + 1].id);
+      return;
+    }
+    navigate("renders");
+  }
+
+  async function togglePreviewFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      if (!previewStageRef.current?.requestFullscreen) {
+        setToast("Browser ini belum mendukung pratinjau layar penuh.");
+        return;
+      }
+      await previewStageRef.current.requestFullscreen();
+    } catch {
+      setToast("Pratinjau layar penuh tidak dapat dibuka.");
+    }
+  }
+
+  async function openQuranSurah(number: number) {
+    if (!capabilities.quran.available) {
+      setToast("Korpus produksi belum tersedia.");
+      return;
+    }
+    setQuranPreviewLoading(true);
+    try {
+      const response = await fetch(`/media-api/quran/surah?number=${number}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Surah tidak dapat dimuat.");
+      setQuranPreview(payload as QuranPreview);
+      setToast(`Surah ${number} berhasil dimuat dari korpus produksi.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Surah tidak dapat dimuat.");
+    } finally {
+      setQuranPreviewLoading(false);
+    }
+  }
+
   async function createProject(event: FormEvent) {
     event.preventDefault();
     const title = newProjectName.trim() || "Proyek Qur'an Baru";
@@ -507,7 +699,7 @@ export default function Home() {
       title,
       updatedAt: new Date().toISOString(),
       status: "draft",
-      ratio: "16:9",
+      ratio: newProjectRatio,
       duration: 0,
       progress: 10,
       segments: sampleSegments.map((segment) => ({ ...segment, id: `${segment.id}-${Date.now()}`, verified: false })),
@@ -530,9 +722,42 @@ export default function Home() {
     }
     setProjects((items) => [project, ...items]);
     setNewProjectName("");
+    setNewProjectRatio("16:9");
     setIsNewProjectOpen(false);
     setToast(sessionMode === "authenticated" ? "Proyek baru dibuat dan disimpan di server." : "Proyek baru dibuat dan disimpan di perangkat ini.");
     window.setTimeout(() => openProject(project.id), 0);
+  }
+
+  async function duplicateActiveProject() {
+    if (!activeProject) return;
+    const title = `${activeProject.title} — Salinan`;
+    let project: Project = {
+      ...activeProject,
+      id: `project-${Date.now()}`,
+      title,
+      updatedAt: new Date().toISOString(),
+      serverVersion: undefined,
+      segments: activeProject.segments.map((segment) => ({ ...segment, id: `${segment.id}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` })),
+    };
+    if (sessionMode === "authenticated" && session.workspaces?.[0]) {
+      try {
+        const response = await fetch("/api/v1/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-tq-workspace": session.workspaces[0].id },
+          body: JSON.stringify({ title, state: projectState(project) }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Duplikasi proyek gagal.");
+        project = { ...payload.project, serverVersion: payload.project.version };
+        serverSnapshots.current.set(project.id, JSON.stringify({ title: project.title, state: projectState(project) }));
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : "Duplikasi proyek gagal.");
+        return;
+      }
+    }
+    setProjects((items) => [project, ...items]);
+    setToast("Salinan proyek berhasil dibuat.");
+    window.setTimeout(() => openProject(project.id, "design"), 0);
   }
 
   function processAudio(file?: File) {
@@ -542,14 +767,15 @@ export default function Home() {
       return;
     }
     if (file.size > 500 * 1024 * 1024) {
-      setToast("Ukuran berkas maksimal untuk prototipe lokal adalah 500 MB.");
+      setToast("Ukuran berkas maksimal adalah 500 MB.");
       return;
     }
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    if (audioUrl?.startsWith("blob:")) URL.revokeObjectURL(audioUrl);
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
     setAudioFile(file);
     setAudioName(file.name);
+    setLoadedAudioAssetId(undefined);
     setProjects((items) =>
       items.map((project) =>
         project.id === activeProject.id
@@ -567,7 +793,9 @@ export default function Home() {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unggah audio ke server gagal.");
         setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, audioAssetId: payload.asset.id } : project));
-        setToast("Audio tersimpan aman di ruang kerja server.");
+        setLoadedAudioAssetId(payload.asset.id);
+        await refreshMediaLibrary();
+        setToast("Audio tersimpan di Pustaka Media dan terhubung ke proyek.");
       }).catch((error) => setToast(error.message));
     }
   }
@@ -576,6 +804,16 @@ export default function Home() {
     const duration = audioRef.current?.duration;
     if (!duration || !Number.isFinite(duration)) return;
     setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, duration } : project));
+    if (activeProject.audioAssetId && sessionMode === "authenticated") {
+      void patchMediaAsset(activeProject.audioAssetId, { durationSeconds: duration }, true).catch(() => {});
+    }
+  }
+
+  function handleAudioTimeUpdate() {
+    const time = audioRef.current?.currentTime || 0;
+    setPlayheadTime(time);
+    const segment = activeProject?.segments.find((item) => time >= item.start && time < item.end);
+    if (segment && segment.id !== selectedSegmentId) setSelectedSegmentId(segment.id);
   }
 
   function processBackground(file?: File) {
@@ -588,9 +826,10 @@ export default function Home() {
       setToast("Ukuran latar maksimal 500 MB.");
       return;
     }
-    if (backgroundUrl) URL.revokeObjectURL(backgroundUrl);
+    if (backgroundUrl?.startsWith("blob:")) URL.revokeObjectURL(backgroundUrl);
     setBackgroundFile(file);
     setBackgroundUrl(URL.createObjectURL(file));
+    setLoadedBackgroundAssetId(undefined);
     setToast("Latar visual siap digunakan pada pratinjau dan render.");
     if (sessionMode === "authenticated" && session.workspaces?.[0] && activeProject.serverVersion) {
       fetch(`/api/v1/assets?projectId=${encodeURIComponent(activeProject.id)}&kind=background`, {
@@ -601,7 +840,9 @@ export default function Home() {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unggah latar ke server gagal.");
         setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, backgroundAssetId: payload.asset.id } : project));
-        setToast("Latar tersimpan aman di ruang kerja server.");
+        setLoadedBackgroundAssetId(payload.asset.id);
+        await refreshMediaLibrary();
+        setToast("Latar tersimpan di Pustaka Media.");
       }).catch((error) => setToast(error.message));
     }
   }
@@ -624,8 +865,33 @@ export default function Home() {
     }
   }
 
+  function rememberProjectState() {
+    if (!activeProject) return;
+    undoStack.current = [...undoStack.current.slice(-29), structuredClone(activeProject)];
+    redoStack.current = [];
+  }
+
+  function undoProjectChange() {
+    const previous = undoStack.current.pop();
+    if (!previous || !activeProject) return setToast("Belum ada perubahan untuk dibatalkan.");
+    redoStack.current.push(structuredClone(activeProject));
+    setProjects((items) => items.map((project) => project.id === activeProject.id ? previous : project));
+    setSelectedSegmentId(previous.segments.find((segment) => segment.id === selectedSegmentId)?.id || previous.segments[0]?.id || "");
+    setToast("Perubahan terakhir dibatalkan.");
+  }
+
+  function redoProjectChange() {
+    const next = redoStack.current.pop();
+    if (!next || !activeProject) return setToast("Belum ada perubahan untuk diulangi.");
+    undoStack.current.push(structuredClone(activeProject));
+    setProjects((items) => items.map((project) => project.id === activeProject.id ? next : project));
+    setSelectedSegmentId(next.segments.find((segment) => segment.id === selectedSegmentId)?.id || next.segments[0]?.id || "");
+    setToast("Perubahan diterapkan kembali.");
+  }
+
   function updateSegment(patch: Partial<Segment>) {
     if (!selectedSegment) return;
+    rememberProjectState();
     setProjects((items) =>
       items.map((project) =>
         project.id === activeProject.id
@@ -730,27 +996,37 @@ export default function Home() {
       const alignmentResponse = await fetch("/media-api/quran/align", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: parts.slice(0, 240), options: { lookBehind: 4, lookAhead: 32, alternatives: 3, threshold: 0.16 } }),
+        body: JSON.stringify({ parts: parts.slice(0, 240), options: { lookBehind: 2, lookAhead: 32, alternatives: 3, threshold: 0.22, minimumSimilarity: 0.16, allowBacktrack: false } }),
       });
       const alignmentPayload = await alignmentResponse.json().catch(() => ({}));
       if (!alignmentResponse.ok) throw new Error(alignmentPayload.error || "Alignment ayat gagal.");
       const matched: AlignedPart[] = alignmentPayload.aligned || [];
       const duration = activeProject.duration || audioRef.current?.duration || 10;
-      const nextSegments: Segment[] = matched
-        .filter((item): item is AlignedPart & { ayah: NonNullable<AlignedPart["ayah"]> } => Boolean(item.matched && item.ayah))
+      const rawSegments: Segment[] = matched
+        .filter((item): item is AlignedPart & { ayah: NonNullable<AlignedPart["ayah"]> } => Boolean(item.matched && item.ayah && item.ayah.ayah >= 1 && item.ayah.surahNumber >= 1 && item.ayah.surahNumber <= 114))
         .map((item, index) => ({
           id: `seg-ai-${Date.now()}-${index}`,
           surah: item.ayah.surah,
           surahNumber: item.ayah.surahNumber,
           ayah: item.ayah.ayah,
-          start: typeof item.start === "number" && Number.isFinite(item.start) ? item.start : (index / matched.length) * duration,
-          end: typeof item.end === "number" && Number.isFinite(item.end) ? item.end : ((index + 1) / matched.length) * duration,
+          start: typeof item.start === "number" && Number.isFinite(item.start) ? Math.max(0, item.start) : (index / Math.max(1, matched.length)) * duration,
+          end: typeof item.end === "number" && Number.isFinite(item.end) ? Math.min(duration, Math.max(0.1, item.end)) : ((index + 1) / Math.max(1, matched.length)) * duration,
           arabic: item.ayah.arabic,
           translation: "",
-          confidence: item.confidence,
+          confidence: Math.max(0, Math.min(100, item.confidence)),
           verified: false,
         }))
-        .filter((segment, index, items) => index === 0 || `${segment.surahNumber}:${segment.ayah}:${segment.start}` !== `${items[index - 1].surahNumber}:${items[index - 1].ayah}:${items[index - 1].start}`);
+        .filter((segment) => segment.end > segment.start && segment.confidence > 0);
+      const nextSegments: Segment[] = rawSegments.reduce<Segment[]>((items, segment) => {
+        const previous = items.at(-1);
+        if (previous && previous.surahNumber === segment.surahNumber && previous.ayah === segment.ayah && segment.start <= previous.end + 1.2) {
+          previous.end = Math.max(previous.end, segment.end);
+          previous.confidence = Math.max(previous.confidence, segment.confidence);
+          return items;
+        }
+        items.push({ ...segment });
+        return items;
+      }, []);
       if (!nextSegments.length) throw new Error("Belum ditemukan kecocokan ayat yang memadai.");
       setProjects((items) => items.map((project) => project.id === activeProject.id ? {
         ...project,
@@ -762,6 +1038,23 @@ export default function Home() {
       } : project));
       setSelectedSegmentId(nextSegments[0].id);
       setStudioStep("sync");
+      if (activeProject.audioAssetId && sessionMode === "authenticated") {
+        const surahs = [...new Set(nextSegments.map((segment) => segment.surahNumber))];
+        const sameSurah = surahs.length === 1;
+        const ayahs = nextSegments.map((segment) => segment.ayah);
+        const minAyah = Math.min(...ayahs);
+        const maxAyah = Math.max(...ayahs);
+        const needsReview = nextSegments.some((segment) => segment.confidence < 70);
+        void patchMediaAsset(activeProject.audioAssetId, {
+          scope: sameSurah && nextSegments.length === 1 ? "ayah" : sameSurah ? "surah" : "generic",
+          surahNumber: sameSurah ? surahs[0] : null,
+          ayahStart: sameSurah ? minAyah : null,
+          ayahEnd: sameSurah ? maxAyah : null,
+          durationSeconds: duration,
+          analysisStatus: needsReview ? "needs-review" : "analyzed",
+          metadata: { surahName: sameSurah ? nextSegments[0].surah : null, transcript: fullText, alignment: nextSegments.map((segment) => ({ surahNumber: segment.surahNumber, ayah: segment.ayah, start: segment.start, end: segment.end, confidence: segment.confidence })) },
+        }, true).catch(() => {});
+      }
       setToast(`${nextSegments.length} potongan ayat ditemukan. Periksa teks dan waktunya sebelum ekspor.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Transkripsi tidak dapat diselesaikan.");
@@ -771,6 +1064,7 @@ export default function Home() {
   }
 
   function addManualSegment() {
+    rememberProjectState();
     const last = activeProject.segments.at(-1);
     const start = last?.end ?? 0;
     const segment: Segment = {
@@ -796,29 +1090,40 @@ export default function Home() {
     setToast(`Subtitle ${format.toUpperCase()} berhasil dibuat.`);
   }
 
-  async function renderVideo() {
-    if (isRendering) return;
-    if (!activeProject.segments.length) return setToast("Tambahkan minimal satu potongan ayat.");
-    if (activeProject.segments.some((segment) => !segment.verified)) return setToast("Semua potongan ayat harus diperiksa manusia sebelum render.");
+  async function renderVideo(ratioOverride?: Ratio, navigateAfter = true, batchId?: string) {
+    if (isRendering && !batchId) return;
+    const outputRatio = ratioOverride || ratio;
+    const renderSegments = renderScope === "ayah" && selectedSegment ? [selectedSegment] : activeProject.segments;
+    if (!renderSegments.length) return setToast("Tambahkan minimal satu potongan ayat.");
+    if (renderSegments.some((segment) => !segment.verified)) return setToast(renderScope === "ayah" ? "Ayat yang dipilih harus diperiksa manusia sebelum render." : "Semua potongan ayat harus diperiksa manusia sebelum render.");
     if (!(window.MediaRecorder && HTMLCanvasElement.prototype.captureStream)) return setToast("Browser ini belum mendukung render lokal. Gunakan Chrome atau Edge terbaru.");
+    const sourceStart = renderScope === "ayah" ? Math.max(0, renderSegments[0].start) : 0;
+    const sourceEndHint = renderScope === "ayah" ? renderSegments[0].end : Math.max(activeProject.duration || 0, renderSegments.at(-1)?.end || 0);
+    const renderTitle = renderScope === "ayah" ? `${activeProject.title} • QS ${renderSegments[0].surahNumber}:${renderSegments[0].ayah}` : activeProject.title;
     const jobId = `render-${Date.now()}`;
-    const baseJob: RenderJob = { id: jobId, projectId: activeProject.id, title: activeProject.title, ratio, resolution, progress: 5, status: "queued", format: capabilities.ffmpeg ? "MP4" : "WebM" };
+    const baseJob: RenderJob = { id: jobId, projectId: activeProject.id, title: renderTitle, ratio: outputRatio, resolution, progress: 5, status: "queued", format: capabilities.ffmpeg ? "MP4" : "WebM" };
     setRenderJobs((jobs) => [baseJob, ...jobs]);
     setIsRendering(true);
-    setToast("Render nyata dimulai di perangkat ini…");
+    setToast(renderScope === "ayah" ? "Render ayat dimulai…" : "Render surah/proyek dimulai…");
     try {
-      const { width, height } = canvasDimensions(ratio, resolution);
+      const { width, height } = canvasDimensions(outputRatio, resolution);
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Kanvas video tidak tersedia.");
       const sourceAudio = audioUrl ? new Audio(audioUrl) : null;
-      const duration = sourceAudio ? await new Promise<number>((resolve, reject) => {
-        sourceAudio.preload = "auto";
-        sourceAudio.onloadedmetadata = () => resolve(sourceAudio.duration);
-        sourceAudio.onerror = () => reject(new Error("Audio tidak dapat dibaca untuk render."));
-      }) : Math.max(1, activeProject.duration || activeProject.segments.at(-1)?.end || 10);
+      let fullDuration = Math.max(1, activeProject.duration || renderSegments.at(-1)?.end || 10);
+      if (sourceAudio) {
+        fullDuration = await new Promise<number>((resolve, reject) => {
+          sourceAudio.preload = "auto";
+          sourceAudio.onloadedmetadata = () => resolve(sourceAudio.duration);
+          sourceAudio.onerror = () => reject(new Error("Audio tidak dapat dibaca untuk render."));
+        });
+      }
+      const captureStart = Math.min(Math.max(0, sourceStart), Math.max(0, fullDuration - 0.1));
+      const captureEnd = Math.min(fullDuration, Math.max(captureStart + 0.1, sourceEndHint || fullDuration));
+      const duration = Math.max(0.1, captureEnd - captureStart);
       const backgroundImage = backgroundUrl && backgroundFile?.type.startsWith("image/") ? new Image() : null;
       if (backgroundImage) {
         backgroundImage.src = backgroundUrl;
@@ -841,9 +1146,10 @@ export default function Home() {
         source.connect(destination);
         source.connect(audioContext.destination);
         destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+        sourceAudio.currentTime = captureStart;
       }
       const mime = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((item) => MediaRecorder.isTypeSupported(item));
-      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: resolution === "2160p (4K)" ? 18_000_000 : 8_000_000 } : undefined);
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: resolution === "2160p (4K)" ? 18_000_000 : resolution === "1440p" ? 12_000_000 : 8_000_000 } : undefined);
       const chunks: BlobPart[] = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       const stopped = new Promise<void>((resolve, reject) => { recorder.onstop = () => resolve(); recorder.onerror = () => reject(new Error("Perekaman kanvas gagal.")); });
@@ -851,11 +1157,20 @@ export default function Home() {
       const startedAt = performance.now();
       const draw = () => {
         if (!running) return;
-        const time = sourceAudio?.currentTime ?? Math.min(duration, (performance.now() - startedAt) / 1000);
-        const segment = activeProject.segments.find((item) => time >= item.start && time < item.end) ?? activeProject.segments.at(-1)!;
-        const gradient = context.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, "#071f19"); gradient.addColorStop(0.55, "#0d3b2d"); gradient.addColorStop(1, "#061510");
-        context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+        const absoluteTime = sourceAudio?.currentTime ?? Math.min(captureEnd, captureStart + (performance.now() - startedAt) / 1000);
+        const segment = renderSegments.find((item) => absoluteTime >= item.start && absoluteTime < item.end) ?? renderSegments.at(-1)!;
+        if (designPreset === "minimal") {
+          context.fillStyle = "#09291f";
+          context.fillRect(0, 0, width, height);
+        } else {
+          const gradient = context.createLinearGradient(0, 0, width, height);
+          if (designPreset === "cinematic") {
+            gradient.addColorStop(0, "#030b08"); gradient.addColorStop(0.55, "#15372b"); gradient.addColorStop(1, "#020705");
+          } else {
+            gradient.addColorStop(0, "#071f19"); gradient.addColorStop(0.55, "#0d3b2d"); gradient.addColorStop(1, "#061510");
+          }
+          context.fillStyle = gradient; context.fillRect(0, 0, width, height);
+        }
         const background: HTMLImageElement | HTMLVideoElement | null = backgroundImage || (backgroundVideo?.readyState && backgroundVideo.readyState >= 2 ? backgroundVideo : null);
         if (background) {
           const sourceWidth = background instanceof HTMLVideoElement ? background.videoWidth : background.naturalWidth;
@@ -863,23 +1178,30 @@ export default function Home() {
           const scale = Math.max(width / sourceWidth, height / sourceHeight);
           const drawWidth = sourceWidth * scale; const drawHeight = sourceHeight * scale;
           context.drawImage(background, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
-          context.fillStyle = "rgba(2,18,13,.62)"; context.fillRect(0, 0, width, height);
+          context.fillStyle = designPreset === "cinematic" ? "rgba(0,8,5,.72)" : "rgba(2,18,13,.62)"; context.fillRect(0, 0, width, height);
         }
-        context.strokeStyle = "rgba(219,181,110,.72)"; context.lineWidth = Math.max(2, width * 0.002); context.strokeRect(width * 0.035, height * 0.045, width * 0.93, height * 0.91);
+        if (designPreset !== "minimal") {
+          context.strokeStyle = "rgba(219,181,110,.72)"; context.lineWidth = Math.max(2, width * 0.002); context.strokeRect(width * 0.035, height * 0.045, width * 0.93, height * 0.91);
+        }
+        const fade = 0.25;
+        const fadeIn = Math.min(1, Math.max(0, (absoluteTime - segment.start) / fade));
+        const fadeOut = Math.min(1, Math.max(0, (segment.end - absoluteTime) / fade));
+        context.globalAlpha = Math.min(fadeIn, fadeOut, 1);
         context.textAlign = "center"; context.direction = "rtl"; context.fillStyle = "#fffdf5";
-        const arabicSize = Math.round(width * (ratio === "9:16" ? 0.063 : 0.043) * (fontScale / 100));
+        const arabicSize = Math.round(width * (outputRatio === "9:16" ? 0.063 : 0.043) * (fontScale / 100));
         context.font = `600 ${arabicSize}px "Amiri", "Noto Naskh Arabic", serif`;
         drawWrappedText(context, segment.arabic, width / 2, height * 0.47, width * 0.82, arabicSize * 1.7);
         if (showTranslation && segment.translation) {
-          context.direction = "ltr"; context.fillStyle = "rgba(255,255,255,.88)"; const translationSize = Math.round(width * (ratio === "9:16" ? 0.028 : 0.018));
+          context.direction = "ltr"; context.fillStyle = "rgba(255,255,255,.88)"; const translationSize = Math.round(width * (outputRatio === "9:16" ? 0.028 : 0.018));
           context.font = `400 ${translationSize}px Arial, sans-serif`;
           drawWrappedText(context, segment.translation, width / 2, height * 0.67, width * 0.76, translationSize * 1.45);
         }
+        context.globalAlpha = 1;
         context.direction = "ltr"; context.textAlign = "left"; context.fillStyle = "#dbb56e"; context.font = `600 ${Math.round(width * 0.012)}px Arial`;
-        context.fillText("TAYSRiUL QUR'ANI", width * 0.055, height * 0.92);
+        if (watermarkText.trim()) context.fillText(watermarkText.trim().slice(0, 80), width * 0.055, height * 0.92);
         context.textAlign = "right"; context.fillText(`QS ${segment.surahNumber}:${segment.ayah}`, width * 0.945, height * 0.92);
-        const progress = Math.min(82, 12 + Math.round((time / duration) * 70));
-        setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, progress, status: "processing" } : job));
+        const progress = Math.min(82, 12 + Math.round(((absoluteTime - captureStart) / duration) * 70));
+        setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, progress: Math.max(12, progress), status: "processing" } : job));
         requestAnimationFrame(draw);
       };
       recorder.start(1000);
@@ -887,8 +1209,18 @@ export default function Home() {
       draw();
       if (sourceAudio) {
         await sourceAudio.play();
-        await new Promise<void>((resolve) => { sourceAudio.onended = () => resolve(); });
-      } else await new Promise((resolve) => window.setTimeout(resolve, duration * 1000));
+        await new Promise<void>((resolve) => {
+          const watch = window.setInterval(() => {
+            if (sourceAudio.currentTime >= captureEnd || sourceAudio.ended) {
+              window.clearInterval(watch);
+              sourceAudio.pause();
+              resolve();
+            }
+          }, 50);
+        });
+      } else {
+        await new Promise((resolve) => window.setTimeout(resolve, duration * 1000));
+      }
       running = false;
       recorder.stop();
       await stopped;
@@ -900,39 +1232,51 @@ export default function Home() {
           headers: {
             "content-type": "video/webm",
             "x-tq-workspace": session.workspaces[0].id,
-            "x-project-name": activeProject.title,
-            "x-render-ratio": ratio,
+            "x-project-name": renderTitle,
+            "x-render-ratio": outputRatio,
             "x-render-resolution": resolution,
             "x-render-duration": String(duration),
+            "x-render-scope": renderScope,
+            ...(batchId ? { "x-render-batch": batchId } : {}),
           },
           body: webm,
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Video gagal masuk antrean render.");
         setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, id: payload.job.id, progress: 0, status: "queued", format: "MP4" } : job));
-        setToast("Video masuk antrean server. Anda boleh menutup halaman dan kembali nanti.");
-        navigate("renders");
+        setToast("Video masuk antrean server. Hasil MP4 akan otomatis masuk Pustaka Media.");
+        if (navigateAfter) navigate("renders");
         return;
       }
       let output = webm;
       let format: "MP4" | "WebM" = "WebM";
       if (capabilities.ffmpeg) {
         setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, progress: 88 } : job));
-        const response = await fetch("/media-api/transcode", { method: "POST", headers: { "content-type": webm.type, "x-project-name": safeFilename(activeProject.title) }, body: webm });
+        const response = await fetch("/media-api/transcode", { method: "POST", headers: { "content-type": webm.type, "x-project-name": safeFilename(renderTitle) }, body: webm });
         if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "FFmpeg gagal membuat MP4.");
         output = await response.blob(); format = "MP4";
       }
       const outputUrl = URL.createObjectURL(output);
       setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, progress: 100, status: "complete", format, outputUrl } : job));
-      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, progress: 100, status: "ready" } : project));
+      if (renderScope === "surah") setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, progress: 100, status: "ready" } : project));
       setToast(`Video ${format} selesai. Buka menu Render untuk mengunduh.`);
-      navigate("renders");
+      if (navigateAfter) navigate("renders");
     } catch (error) {
       setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, status: "failed", error: error instanceof Error ? error.message : "Render gagal." } : job));
       setToast(error instanceof Error ? error.message : "Render gagal.");
     } finally {
       setIsRendering(false);
     }
+  }
+
+  async function renderAllRatios() {
+    if (isRendering) return;
+    const batchId = `batch-${Date.now()}`;
+    setToast("Batch 16:9, 9:16, dan 1:1 dimulai. Proses berjalan berurutan agar browser tetap stabil.");
+    for (const targetRatio of ["16:9", "9:16", "1:1"] as Ratio[]) {
+      await renderVideo(targetRatio, false, batchId);
+    }
+    navigate("renders");
   }
 
   function exportProject() {
@@ -981,6 +1325,35 @@ export default function Home() {
     await fetch("/api/v1/auth/logout", { method: "POST" });
     setSession({ authenticated: false });
     setSessionMode("guest");
+  }
+
+  async function retryRenderJob(jobId: string) {
+    if (!session.workspaces?.[0]) return;
+    try {
+      const response = await fetch(`/api/v1/render-jobs/${jobId}/retry`, { method: "POST", headers: { "x-tq-workspace": session.workspaces[0].id } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Render tidak dapat dicoba ulang.");
+      setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, status: "queued", progress: 0, error: undefined } : job));
+      setToast("Render dimasukkan kembali ke antrean.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Render tidak dapat dicoba ulang.");
+    }
+  }
+
+  async function cancelRenderJob(jobId: string) {
+    if (!session.workspaces?.[0]) return;
+    try {
+      const response = await fetch(`/api/v1/render-jobs/${jobId}`, { method: "DELETE", headers: { "x-tq-workspace": session.workspaces[0].id } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Render tidak dapat dibatalkan.");
+      if (payload.cancelRequested) setToast("Permintaan pembatalan diterima. Worker akan berhenti pada checkpoint aman.");
+      else {
+        setRenderJobs((jobs) => jobs.map((job) => job.id === jobId ? { ...job, status: "cancelled", progress: 0 } : job));
+        setToast("Render dibatalkan.");
+      }
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Render tidak dapat dibatalkan.");
+    }
   }
 
   async function exportServerBackup() {
@@ -1170,13 +1543,65 @@ export default function Home() {
           <div className="page">
             <PageHeader eyebrow="Karya Anda" title="Semua proyek" copy="Kelola seluruh produksi video Qur'an dari satu tempat." action={<button className="primary-button" onClick={() => setIsNewProjectOpen(true)}><Icon name="plus" /> Proyek baru</button>} />
             <div className="filter-row">
-              <div className="search-field"><Icon name="search" /><input aria-label="Cari proyek" placeholder="Cari judul proyek…" /></div>
-              <div className="filter-pills"><button className="active">Semua <span>{projects.length}</span></button><button>Draf</button><button>Perlu diperiksa</button><button>Siap render</button></div>
+              <div className="search-field"><Icon name="search" /><input aria-label="Cari proyek" placeholder="Cari judul proyek…" value={projectQuery} onChange={(event) => setProjectQuery(event.target.value)} /></div>
+              <div className="filter-pills">
+                <button className={projectFilter === "all" ? "active" : ""} onClick={() => setProjectFilter("all")}>Semua <span>{projects.length}</span></button>
+                <button className={projectFilter === "draft" ? "active" : ""} onClick={() => setProjectFilter("draft")}>Draf</button>
+                <button className={projectFilter === "review" ? "active" : ""} onClick={() => setProjectFilter("review")}>Perlu diperiksa</button>
+                <button className={projectFilter === "ready" ? "active" : ""} onClick={() => setProjectFilter("ready")}>Siap render</button>
+              </div>
             </div>
             <div className="project-grid wide">
-              {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => openProject(project.id)} />)}
+              {filteredProjects.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => openProject(project.id)} />)}
               <button className="new-project-card" onClick={() => setIsNewProjectOpen(true)}><span><Icon name="plus" size={24} /></span><strong>Buat proyek baru</strong><small>Mulai produksi dari sumber baru</small></button>
             </div>
+          </div>
+        )}
+
+        {view === "media" && (
+          <div className="page media-page">
+            <PageHeader
+              eyebrow="Aset produksi"
+              title="Pustaka Media Qur'an"
+              copy="Audio per surah atau per ayat, latar, dan hasil render tersimpan permanen di ruang kerja server dan dapat dipakai ulang tanpa unggah ulang."
+              action={<><input ref={mediaUploadRef} type="file" accept="audio/*,video/*,image/*" multiple hidden onChange={(event) => void uploadLibraryFiles(Array.from(event.target.files || []))}/><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Tambah media</button></>}
+            />
+            <section className="media-summary">
+              <article><span className="metric-icon green"><Icon name="audio"/></span><div><small>Audio Qur'an</small><strong>{mediaAssets.filter((asset) => asset.kind === "audio").length}</strong><em>surah penuh & per ayat</em></div></article>
+              <article><span className="metric-icon gold"><Icon name="layers"/></span><div><small>Latar visual</small><strong>{mediaAssets.filter((asset) => asset.kind === "background").length}</strong><em>gambar dan video</em></div></article>
+              <article><span className="metric-icon blue"><Icon name="play"/></span><div><small>Hasil render</small><strong>{mediaAssets.filter((asset) => asset.kind === "render-output").length}</strong><em>MP4 tersimpan</em></div></article>
+              <article><span className="metric-icon violet"><Icon name="shield"/></span><div><small>Sudah dianalisis</small><strong>{mediaAssets.filter((asset) => asset.analysisStatus === "analyzed").length}</strong><em>metadata alignment tersedia</em></div></article>
+            </section>
+            <div className="filter-row media-filters">
+              <div className="search-field"><Icon name="search"/><input aria-label="Cari media" placeholder="Cari nama file, surah, atau qari…" value={mediaQuery} onChange={(event) => setMediaQuery(event.target.value)}/></div>
+              <div className="filter-pills">
+                <button className={mediaKind === "all" ? "active" : ""} onClick={() => setMediaKind("all")}>Semua</button>
+                <button className={mediaKind === "audio" ? "active" : ""} onClick={() => setMediaKind("audio")}>Audio</button>
+                <button className={mediaKind === "background" ? "active" : ""} onClick={() => setMediaKind("background")}>Latar</button>
+                <button className={mediaKind === "render-output" ? "active" : ""} onClick={() => setMediaKind("render-output")}>Hasil render</button>
+              </div>
+            </div>
+            <div className="media-scope-filters">
+              <span>Cakupan audio:</span>
+              {(["all", "surah", "ayah", "generic"] as const).map((scope) => <button key={scope} className={mediaScope === scope ? "active" : ""} onClick={() => setMediaScope(scope)}>{scope === "all" ? "Semua" : scope === "surah" ? "Per surah" : scope === "ayah" ? "Per ayat" : "Umum"}</button>)}
+              <button className="media-refresh" onClick={() => void refreshMediaLibrary()}><Icon name="clock" size={14}/> Muat ulang</button>
+            </div>
+            {filteredMediaAssets.length === 0 ? <div className="empty-state media-empty"><span><Icon name="audio" size={28}/></span><h2>Belum ada media sesuai filter</h2><p>Unggah audio Qur'an. Nama <strong>0001.mp3</strong> otomatis dikenali sebagai Surah 1 penuh, sedangkan <strong>001001.mp3</strong> sebagai QS 1:1.</p><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Unggah media</button></div> : <div className="media-grid">
+              {filteredMediaAssets.map((asset) => {
+                const quranLabel = asset.scope === "surah" && asset.surahNumber ? `Surah ${asset.surahNumber}${asset.ayahEnd ? ` · ayat ${asset.ayahStart || 1}–${asset.ayahEnd}` : " · penuh"}` : asset.scope === "ayah" && asset.surahNumber ? `QS ${asset.surahNumber}:${asset.ayahStart}` : "Media umum";
+                const statusLabel = asset.analysisStatus === "analyzed" ? "Sinkron" : asset.analysisStatus === "needs-review" ? "Perlu diperiksa" : asset.analysisStatus === "failed" ? "Analisis gagal" : "Belum dianalisis";
+                return <article className="media-card" key={asset.id}>
+                  <div className={`media-card-icon kind-${asset.kind}`}><Icon name={asset.kind === "audio" ? "audio" : asset.kind === "render-output" ? "play" : "layers"}/></div>
+                  <div className="media-card-main"><div className="media-card-title"><strong title={asset.originalName}>{asset.originalName}</strong><span className={`media-analysis ${asset.analysisStatus}`}>{statusLabel}</span></div><small>{quranLabel}{asset.qari ? ` · ${asset.qari}` : ""}</small><div className="media-meta"><span>{asset.durationSeconds ? formatDuration(asset.durationSeconds) : "Durasi belum dibaca"}</span><span>{formatBytes(asset.sizeBytes)}</span><span>{relativeDate(asset.createdAt)}</span></div></div>
+                  <div className="media-card-actions">
+                    {(asset.kind === "audio" || asset.kind === "background" || asset.kind === "logo") && <button className="primary-button" onClick={() => void useMediaAsset(asset)}>{asset.kind === "audio" ? "Gunakan audio" : "Gunakan latar"}</button>}
+                    <button className="secondary-button" onClick={() => window.open(asset.kind === "render-output" ? asset.downloadUrl : asset.streamUrl, "_blank", "noopener,noreferrer")}>{asset.kind === "audio" ? "Putar" : asset.kind === "render-output" ? "Unduh" : "Buka"}</button>
+                    {(asset.kind === "audio" || asset.kind === "background") && <button className="secondary-button" onClick={() => void editMediaMetadata(asset)}>Metadata</button>}
+                    <button className="media-archive" disabled={mediaBusyId === asset.id} onClick={() => void archiveMediaAsset(asset)}>Arsipkan</button>
+                  </div>
+                </article>;
+              })}
+            </div>}
           </div>
         )}
 
@@ -1184,7 +1609,7 @@ export default function Home() {
           <div className="studio-page">
             <div className="studio-head">
               <div className="studio-title"><button className="back-button" onClick={() => navigate("projects")} aria-label="Kembali ke proyek">‹</button><div><small>Proyek aktif</small><h1>{activeProject.title}</h1></div><span className={`status-label ${activeProject.status}`}>{activeProject.status === "draft" ? "Draf" : activeProject.status === "review" ? "Perlu diperiksa" : "Siap render"}</span></div>
-              <div className="studio-actions"><span className="save-label"><Icon name="check" size={14} /> {saveState === "saved" ? sessionMode === "authenticated" ? "Tersimpan di server" : "Tersimpan lokal" : "Menyimpan…"}</span><button className="secondary-button" onClick={exportProject}><Icon name="download" /> Ekspor proyek</button><button className="primary-button" onClick={() => setStudioStep("render")}>Lanjutkan <Icon name="chevron" size={15} /></button></div>
+              <div className="studio-actions"><span className="save-label"><Icon name="check" size={14} /> {saveState === "saved" ? sessionMode === "authenticated" ? "Tersimpan di server" : "Tersimpan lokal" : "Menyimpan…"}</span><button className="secondary-button" onClick={() => void duplicateActiveProject()}><Icon name="plus" /> Duplikat</button><button className="secondary-button" onClick={exportProject}><Icon name="download" /> Ekspor proyek</button><button className="primary-button" onClick={goToNextStudioStep}>{studioStep === "render" ? "Lihat antrean" : "Lanjutkan"} <Icon name="chevron" size={15} /></button></div>
             </div>
 
             <div className="stepper" role="tablist" aria-label="Tahapan produksi">
@@ -1196,7 +1621,7 @@ export default function Home() {
 
             <div className="studio-workspace">
               <aside className="source-panel panel">
-                <div className="panel-heading"><div><span className="panel-kicker">Sumber media</span><h2>Audio bacaan</h2></div><button className="icon-button small" aria-label="Pilihan sumber"><Icon name="more" /></button></div>
+                <div className="panel-heading"><div><span className="panel-kicker">Sumber media</span><h2>Audio bacaan</h2></div><button className="icon-button small" aria-label="Pilihan sumber" onClick={() => setToast("Sumber aktif: audio/video lokal yang diunggah ke ruang kerja server.")}><Icon name="more" /></button></div>
                 <input ref={fileInputRef} type="file" accept="audio/*,video/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => processAudio(event.target.files?.[0])} />
                 <div
                   className={`drop-zone ${isDragging ? "dragging" : ""} ${audioName ? "has-file" : ""}`}
@@ -1208,7 +1633,7 @@ export default function Home() {
                   <span className="upload-icon"><Icon name={audioName ? "audio" : "upload"} size={22} /></span>
                   {audioName ? <><strong>{audioName}</strong><small>Siap diputar dari perangkat ini</small><button onClick={() => fileInputRef.current?.click()}>Ganti berkas</button></> : <><strong>Letakkan audio di sini</strong><small>MP3, WAV, M4A, MP4 • maks. 500 MB</small><button onClick={() => fileInputRef.current?.click()}>Pilih berkas</button></>}
                 </div>
-                <audio ref={audioRef} src={audioUrl} onLoadedMetadata={handleAudioMetadata} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} />
+                <audio ref={audioRef} src={audioUrl} onLoadedMetadata={handleAudioMetadata} onTimeUpdate={handleAudioTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => { setIsPlaying(false); setPlayheadTime(activeProject.duration || 0); }} />
                 <button className="ai-action" onClick={runLocalAnalysis} disabled={isTranscribing}><span><Icon name="spark" /></span><div><strong>{isTranscribing ? "Menganalisis bacaan…" : "Transkripsi & cocokkan ayat"}</strong><small>{capabilities.transcription ? "AI aktif" : "Perlu endpoint AI"} • {capabilities.quran.available ? "korpus siap" : "korpus belum sinkron"}</small></div><Icon name="chevron" size={16} /></button>
 
                 <div className="source-settings">
@@ -1221,7 +1646,7 @@ export default function Home() {
                 <div className="segments-heading"><span>Potongan ayat</span><div><em>{activeProject.segments.length}</em><button onClick={addManualSegment} aria-label="Tambah potongan ayat"><Icon name="plus" size={14}/></button></div></div>
                 <div className="segment-list">
                   {activeProject.segments.map((segment) => (
-                    <button key={segment.id} className={selectedSegment.id === segment.id ? "active" : ""} onClick={() => setSelectedSegmentId(segment.id)}>
+                    <button key={segment.id} className={selectedSegment.id === segment.id ? "active" : ""} onClick={() => { setSelectedSegmentId(segment.id); setPlayheadTime(segment.start); if (audioRef.current) audioRef.current.currentTime = segment.start; }}>
                       <span className={`segment-state ${segment.verified ? "verified" : ""}`}>{segment.verified ? <Icon name="check" size={12} /> : segment.ayah}</span>
                       <div><strong>{segment.surah} · {segment.ayah}</strong><small>{formatDuration(segment.start)} — {formatDuration(segment.end)}</small></div>
                       <em>{segment.confidence}%</em>
@@ -1232,15 +1657,15 @@ export default function Home() {
 
               <section className="preview-panel panel">
                 <div className="preview-toolbar">
-                  <div className="device-tabs"><button className="active">Kanvas</button><button onClick={() => setToast("Pratinjau layar penuh disiapkan untuk fase berikutnya.")}>Pratinjau</button></div>
-                  <div className="zoom-control"><button aria-label="Perkecil">−</button><span>Fit</span><button aria-label="Perbesar">+</button></div>
+                  <div className="device-tabs"><button className="active" onClick={() => setCanvasZoom(100)}>Kanvas</button><button onClick={togglePreviewFullscreen}>Pratinjau</button></div>
+                  <div className="preview-toolbar-actions"><button className="history-button" onClick={undoProjectChange} title="Undo">↶</button><button className="history-button" onClick={redoProjectChange} title="Redo">↷</button><div className="zoom-control"><button aria-label="Perkecil" onClick={() => setCanvasZoom((value) => Math.max(60, value - 10))}>−</button><span>{canvasZoom === 100 ? "Fit" : `${canvasZoom}%`}</span><button aria-label="Perbesar" onClick={() => setCanvasZoom((value) => Math.min(150, value + 10))}>+</button></div></div>
                 </div>
-                <div className="canvas-stage">
-                  <div className={`video-canvas ratio-${ratio.replace(":", "-")} mushaf-${mushafVersion}`} style={backgroundUrl && backgroundFile?.type.startsWith("image/") ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+                <div className="canvas-stage" ref={previewStageRef}>
+                  <div className={`video-canvas ratio-${ratio.replace(":", "-")} mushaf-${mushafVersion} preset-${designPreset}`} style={{ ...(backgroundUrl && backgroundFile?.type.startsWith("image/") ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}), transform: `scale(${canvasZoom / 100})`, transformOrigin: "center" }}>
                     {backgroundUrl && backgroundFile?.type.startsWith("video/") && <video className="canvas-background-video" src={backgroundUrl} autoPlay muted loop playsInline/>}
                     {backgroundUrl && <div className="canvas-background-scrim"/>}
                     <div className="canvas-decoration top" />
-                    <span className="surah-chip"><i>١</i> سُورَةُ الْفَاتِحَة</span>
+                    <span className="surah-chip"><i>{selectedSegment.surahNumber}</i> {selectedSegment.surah}</span>
                     <div className="canvas-verse">
                       <p
                         dir="rtl"
@@ -1252,14 +1677,14 @@ export default function Home() {
                       </p>
                       {showTranslation && <><span className="translation-rule"/><small>{selectedSegment.translation}</small></>}
                     </div>
-                    <div className="canvas-footer"><span>TAYSRiUL QUR&apos;ANI</span><em>{selectedSegment.surahNumber}:{selectedSegment.ayah}</em></div>
+                    <div className="canvas-footer"><span>{watermarkText}</span><em>{selectedSegment.surahNumber}:{selectedSegment.ayah}</em></div>
                     <div className="canvas-decoration bottom" />
                   </div>
                 </div>
                 <div className="timeline">
-                  <div className="transport"><button className="round-play" onClick={togglePlayback} aria-label={isPlaying ? "Jeda" : "Putar"}><Icon name={isPlaying ? "pause" : "play"} size={16} /></button><strong>{formatDuration(selectedSegment.start)}</strong><span>/ {formatDuration(activeProject.duration || 14.9)}</span><div className="transport-spacer"/><button aria-label="Pengaturan timeline"><Icon name="settings" size={16}/></button></div>
-                  <div className="waveform"><div className="playhead" style={{ left: `${Math.max(5, (selectedSegment.start / (activeProject.duration || 14.9)) * 100)}%` }} />{waveform.map((height, index) => <i key={index} className={index / waveform.length < selectedSegment.end / (activeProject.duration || 14.9) ? "passed" : ""} style={{ height: `${height * 0.34}px` }} />)}</div>
-                  <div className="timeline-cues">{activeProject.segments.map((segment) => <button key={segment.id} className={segment.id === selectedSegment.id ? "active" : ""} style={{ left: `${(segment.start / (activeProject.duration || 14.9)) * 100}%`, width: `${Math.max(12, ((segment.end - segment.start) / (activeProject.duration || 14.9)) * 100)}%` }} onClick={() => setSelectedSegmentId(segment.id)}>QS {segment.surahNumber}:{segment.ayah}</button>)}</div>
+                  <div className="transport"><button className="round-play" onClick={togglePlayback} aria-label={isPlaying ? "Jeda" : "Putar"}><Icon name={isPlaying ? "pause" : "play"} size={16} /></button><strong>{formatDuration(playheadTime)}</strong><span>/ {formatDuration(activeProject.duration || 14.9)}</span><div className="transport-spacer"/><button aria-label="Pengaturan timeline" onClick={() => setToast("Waktu potongan dapat diedit dari kolom Mulai dan Selesai di panel kanan.")}><Icon name="settings" size={16}/></button></div>
+                  <div className="waveform"><div className="playhead" style={{ left: `${Math.max(0, Math.min(100, (playheadTime / (activeProject.duration || 14.9)) * 100))}%` }} />{waveformPeaks.map((height, index) => <i key={index} className={index / waveformPeaks.length < playheadTime / (activeProject.duration || 14.9) ? "passed" : ""} style={{ height: `${height * 0.34}px` }} />)}</div>
+                  <div className="timeline-cues">{activeProject.segments.map((segment) => <button key={segment.id} className={segment.id === selectedSegment.id ? "active" : ""} style={{ left: `${(segment.start / (activeProject.duration || 14.9)) * 100}%`, width: `${Math.max(12, ((segment.end - segment.start) / (activeProject.duration || 14.9)) * 100)}%` }} onClick={() => { setSelectedSegmentId(segment.id); setPlayheadTime(segment.start); if (audioRef.current) audioRef.current.currentTime = segment.start; }}>QS {segment.surahNumber}:{segment.ayah}</button>)}</div>
                 </div>
               </section>
 
@@ -1281,6 +1706,11 @@ export default function Home() {
                   <div className="section-label"><span>Terjemahan</span><label className="switch"><input type="checkbox" checked={showTranslation} onChange={(event) => setShowTranslation(event.target.checked)}/><i/></label></div>
                   <label><span>Sumber</span><select value={translationSource} onChange={(event) => selectTranslationSource(event.target.value)}><option>Teks manual</option>{contentSources.filter((source) => source.enabled && source.redistributionAllowed).map((source) => <option key={source.edition} value={source.edition}>{source.name}</option>)}</select></label>
                   <label><span>Teks terjemahan</span><textarea value={selectedSegment.translation} onChange={(event) => updateSegment({ translation: event.target.value })}/></label>
+                </div>
+                <div className="inspector-section">
+                  <div className="section-label"><span>Desain video</span><Icon name="studio" size={15}/></div>
+                  <label><span>Template</span><select value={designPreset} onChange={(event) => setDesignPreset(event.target.value as "classic" | "minimal" | "cinematic")}><option value="classic">Klasik Madinah</option><option value="minimal">Minimal</option><option value="cinematic">Sinematik</option></select></label>
+                  <label><span>Watermark</span><input value={watermarkText} maxLength={80} onChange={(event) => setWatermarkText(event.target.value)} placeholder="Kosongkan untuk tanpa watermark"/></label>
                 </div>
                 <div className="inspector-section compact-section">
                   <div className="section-label"><span>Format video</span></div>
@@ -1305,9 +1735,10 @@ export default function Home() {
             {studioStep === "render" && (
               <div className="render-drawer">
                 <div><span className="section-kicker">Langkah terakhir</span><h2>Ekspor subtitle & video nyata</h2><p>Subtitle dibuat langsung. Video dirender oleh browser lalu dikonversi FFmpeg menjadi MP4 ketika container Coolify aktif.</p><div className="subtitle-actions"><button onClick={() => exportSubtitle("srt")}><Icon name="download" size={15}/> SRT</button><button onClick={() => exportSubtitle("vtt")}><Icon name="download" size={15}/> VTT</button><button onClick={() => exportSubtitle("ass")}><Icon name="download" size={15}/> ASS</button><button onClick={() => exportSubtitle("srt", "arabic")}><Icon name="book" size={15}/> Arab saja</button><button onClick={() => exportSubtitle("srt", "translation")}><Icon name="globe" size={15}/> Terjemahan</button></div></div>
+                <label><span>Cakupan</span><select value={renderScope} onChange={(event) => setRenderScope(event.target.value as "surah" | "ayah")}><option value="surah">Seluruh surah/proyek</option><option value="ayah">Ayat terpilih saja</option></select></label>
                 <label><span>Resolusi</span><select value={resolution} onChange={(event) => setResolution(event.target.value)}><option>1080p</option><option>1440p</option><option>2160p (4K)</option></select></label>
                 <label><span>Format hasil</span><select value={capabilities.ffmpeg ? "MP4" : "WebM"} disabled><option value={capabilities.ffmpeg ? "MP4" : "WebM"}>{capabilities.ffmpeg ? "MP4 · H.264 + AAC" : "WebM · browser"}</option></select></label>
-                <button className="primary-button large" onClick={renderVideo} disabled={isRendering}><Icon name="play" /> {isRendering ? "Sedang merender…" : "Render video sekarang"}</button>
+                <div className="render-buttons"><button className="primary-button large" onClick={() => void renderVideo()} disabled={isRendering}><Icon name="play" /> {isRendering ? "Sedang merender…" : renderScope === "ayah" ? `Render QS ${selectedSegment.surahNumber}:${selectedSegment.ayah}` : "Render video sekarang"}</button><button className="secondary-button" onClick={() => void renderAllRatios()} disabled={isRendering}><Icon name="layers"/> Batch 3 rasio</button></div>
               </div>
             )}
           </div>
@@ -1324,12 +1755,29 @@ export default function Home() {
             </section>
             <div className="library-layout">
               <section className="library-table panel">
-                <div className="table-tools"><div className="search-field"><Icon name="search"/><input placeholder="Cari surah atau nomor…"/></div><button className="secondary-button"><Icon name="layers"/> Semua sumber</button></div>
+                <div className="table-tools">
+                  <div className="search-field"><Icon name="search"/><input placeholder="Cari surah atau nomor…" value={quranQuery} onChange={(event) => setQuranQuery(event.target.value)}/></div>
+                  <button className="secondary-button" onClick={() => setShowEnabledSourcesOnly((value) => !value)}><Icon name="layers"/> {showEnabledSourcesOnly ? "Sumber siap" : "Semua sumber"}</button>
+                </div>
                 <div className="table-head"><span>Surah</span><span>Ayat</span><span>Status teks</span><span>Mushaf</span><span/></div>
-                <button className="surah-row" onClick={() => activeProject ? openProject(activeProject.id, "sync") : setIsNewProjectOpen(true)}><span><i>١</i><span><strong>Al-Fatihah</strong><small>الفاتحة · Pembukaan</small></span></span><span>7</span><span><em className="ready-dot"/> Sampel UI</span><span>v1 · v2</span><Icon name="chevron"/></button>
-                {["Al-Baqarah", "Ali 'Imran", "An-Nisa'", "Al-Ma'idah", "Al-An'am"].map((name, index) => <div className={`surah-row ${capabilities.quran.available ? "" : "muted"}`} key={name}><span><i>{index + 2}</i><span><strong>{name}</strong><small>{capabilities.quran.available ? "Tersedia dalam korpus" : "Menunggu korpus produksi"}</small></span></span><span>—</span><span><em className={capabilities.quran.available ? "ready-dot" : "waiting-dot"}/> {capabilities.quran.available ? "Tervalidasi" : "Belum diimpor"}</span><span>{capabilities.quran.available ? "Utsmani" : "—"}</span><Icon name={capabilities.quran.available ? "check" : "clock"}/></div>)}
+                {filteredQuranRows.map((surah) => (
+                  <button className={`surah-row ${capabilities.quran.available ? "" : "muted"}`} key={surah.number} onClick={() => void openQuranSurah(surah.number)} disabled={quranPreviewLoading}>
+                    <span><i>{surah.number}</i><span><strong>{surah.name}</strong><small>{surah.arabic} · {surah.meaning}</small></span></span>
+                    <span>{surah.ayahs}</span>
+                    <span><em className={capabilities.quran.available ? "ready-dot" : "waiting-dot"}/> {capabilities.quran.available ? "Tervalidasi" : "Belum diimpor"}</span>
+                    <span>{capabilities.quran.available ? "Utsmani" : "—"}</span>
+                    <Icon name={capabilities.quran.available ? "chevron" : "clock"}/>
+                  </button>
+                ))}
+                {!filteredQuranRows.length && <div className="library-empty">Surah tidak ditemukan. Cari dengan nomor 1–114 atau nama surah.</div>}
               </section>
-              <aside className="source-side panel"><span className="panel-kicker">Registri sumber</span><h2>Paket data & lisensi</h2><div className="source-package"><span className="priority"><Icon name="shield" size={16}/></span><div><strong>Teks Utsmani</strong><small>6.236 ayat • checksum SHA-256</small></div></div>{contentSources.map((source) => <div className="source-package" key={source.edition}><span className={source.enabled && source.redistributionAllowed ? "priority" : "planned"}><Icon name={source.enabled && source.redistributionAllowed ? "check" : "clock"} size={16}/></span><div><strong>{source.name}</strong><small>{source.language.toUpperCase()} • {source.licenseName === "verification-required" ? "izin distribusi belum diverifikasi" : source.licenseName}</small></div></div>)}<div className="integrity-note"><Icon name="shield"/><p><strong>Aturan sistem:</strong> teks Qur&apos;an tidak boleh diubah tanpa jejak revisi. Terjemahan dan tafsir tidak dapat disinkronkan sebelum lisensi distribusinya dicatat.</p></div></aside>
+              <aside className="source-side panel">
+                {quranPreview && <div className="quran-preview-card"><span className="panel-kicker">Surah terpilih</span><h2>{quranPreview.nameLatin || `Surah ${quranPreview.number || ""}`}</h2><p dir="rtl">{quranPreview.ayahs?.[0]?.arabic || quranPreview.nameArabic || "Data surah berhasil dimuat dari korpus produksi."}</p><small>{quranPreview.ayahs?.length || quranPreview.ayahCount || 0} ayat termuat</small></div>}
+                <span className="panel-kicker">Registri sumber</span><h2>Paket data & lisensi</h2>
+                <div className="source-package"><span className="priority"><Icon name="shield" size={16}/></span><div><strong>Teks Utsmani</strong><small>6.236 ayat • checksum SHA-256</small></div></div>
+                {visibleContentSources.map((source) => <div className="source-package" key={source.edition}><span className={source.enabled && source.redistributionAllowed ? "priority" : "planned"}><Icon name={source.enabled && source.redistributionAllowed ? "check" : "clock"} size={16}/></span><div><strong>{source.name}</strong><small>{source.language.toUpperCase()} • {source.licenseName === "verification-required" ? "izin distribusi belum diverifikasi" : source.licenseName}</small></div></div>)}
+                <div className="integrity-note"><Icon name="shield"/><p><strong>Aturan sistem:</strong> teks Qur&apos;an tidak boleh diubah tanpa jejak revisi. Terjemahan dan tafsir tidak dapat disinkronkan sebelum lisensi distribusinya dicatat.</p></div>
+              </aside>
             </div>
           </div>
         )}
@@ -1338,19 +1786,40 @@ export default function Home() {
           <div className="page">
             <PageHeader eyebrow="Produksi video" title="Antrean render" copy="Pantau komposisi yang sedang disiapkan dan hasil yang sudah selesai." action={<button className="secondary-button" onClick={() => navigate("studio")}><Icon name="studio"/> Kembali ke studio</button>} />
             <div className="simulation-banner real-mode"><Icon name="check"/><span><strong>Mesin render nyata</strong><small>{capabilities.ffmpeg ? "Browser menyusun video; FFmpeg mengubah hasilnya menjadi MP4 H.264." : "Mode browser menghasilkan WebM. Jalankan Docker untuk mengaktifkan MP4 H.264."}</small></span></div>
-            {renderJobs.length === 0 ? <div className="empty-state"><span><Icon name="play" size={28}/></span><h2>Belum ada video dalam antrean</h2><p>Selesaikan pemeriksaan di studio, pilih format, lalu jalankan render pertama.</p><button className="primary-button" onClick={() => { setStudioStep("render"); navigate("studio"); }}>Siapkan video <Icon name="chevron"/></button></div> : <div className="render-list">{renderJobs.map((job) => <RenderJobCard key={job.id} job={job} onDownload={() => { if (!job.outputUrl) return; const anchor = document.createElement("a"); anchor.href = job.outputUrl; anchor.download = `${safeFilename(job.title)}.${job.format === "MP4" ? "mp4" : "webm"}`; anchor.click(); }}/>)}</div>}
+            {renderJobs.length === 0 ? <div className="empty-state"><span><Icon name="play" size={28}/></span><h2>Belum ada video dalam antrean</h2><p>Selesaikan pemeriksaan di studio, pilih format, lalu jalankan render pertama.</p><button className="primary-button" onClick={() => { setStudioStep("render"); navigate("studio"); }}>Siapkan video <Icon name="chevron"/></button></div> : <div className="render-list">{renderJobs.map((job) => <RenderJobCard key={job.id} job={job} onDownload={() => { if (!job.outputUrl) return; const anchor = document.createElement("a"); anchor.href = job.outputUrl; anchor.download = `${safeFilename(job.title)}.${job.format === "MP4" ? "mp4" : "webm"}`; anchor.click(); }} onRetry={() => void retryRenderJob(job.id)} onCancel={() => void cancelRenderJob(job.id)}/>)}</div>}
           </div>
         )}
 
         {view === "settings" && (
           <div className="page settings-page">
-            <PageHeader eyebrow="Fondasi sistem" title="Pengaturan aplikasi" copy="Konfigurasi identitas, penyimpanan, mesin AI, dan kesiapan deployment." />
+            <PageHeader eyebrow="Fondasi sistem" title="Pengaturan aplikasi" copy="Konfigurasi identitas, penyimpanan, mesin AI, sumber Qur'an, render, dan keamanan." />
             <div className="settings-layout">
-              <nav className="settings-nav"><button className="active"><Icon name="globe"/> Identitas produk</button><button><Icon name="audio"/> Transkripsi AI</button><button><Icon name="book"/> Sumber Qur&apos;an</button><button><Icon name="play"/> Mesin render</button><button><Icon name="shield"/> Keamanan</button></nav>
+              <nav className="settings-nav">
+                <button className={settingsTab === "identity" ? "active" : ""} onClick={() => setSettingsTab("identity")}><Icon name="globe"/> Identitas produk</button>
+                <button className={settingsTab === "transcription" ? "active" : ""} onClick={() => setSettingsTab("transcription")}><Icon name="audio"/> Transkripsi AI</button>
+                <button className={settingsTab === "quran" ? "active" : ""} onClick={() => setSettingsTab("quran")}><Icon name="book"/> Sumber Qur&apos;an</button>
+                <button className={settingsTab === "render" ? "active" : ""} onClick={() => setSettingsTab("render")}><Icon name="play"/> Mesin render</button>
+                <button className={settingsTab === "security" ? "active" : ""} onClick={() => setSettingsTab("security")}><Icon name="shield"/> Keamanan</button>
+              </nav>
+
               <section className="settings-content panel">
-                <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value="1.0.0" readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div>{sessionMode === "authenticated" && <div className="backup-actions"><button className="secondary-button backup-button" onClick={exportServerBackup}><Icon name="download"/> Unduh backup</button><input ref={restoreInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => restoreServerBackup(event.target.files?.[0])}/><button className="secondary-button backup-button" onClick={() => restoreInputRef.current?.click()}><Icon name="upload"/> Pulihkan backup</button></div>}</div>
-                {sessionMode === "authenticated" && <div className="settings-section"><span className="section-kicker">Kolaborasi</span><h2>Anggota workspace</h2><p>Editor mengubah proyek, pemeriksa memberi komentar dan persetujuan, sedangkan viewer hanya membaca.</p><div className="member-list">{members.map((member) => <div key={member.id}><span>{member.display_name?.slice(0,2).toUpperCase() || "U"}</span><div><strong>{member.display_name}</strong><small>{member.email}</small></div><em>{member.role}</em></div>)}</div>{session.workspaces?.[0]?.role === "owner" && <form className="member-form" onSubmit={addWorkspaceMember}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="Email pengguna yang sudah terdaftar"/><select value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "reviewer" | "viewer")}><option value="editor">Editor</option><option value="reviewer">Pemeriksa</option><option value="viewer">Viewer</option></select><button className="primary-button"><Icon name="plus"/> Tambahkan</button></form>}</div>}
-                <div className="settings-section"><div className="section-title-row"><div><span className="section-kicker">Kesiapan mesin produksi</span><h2>Komponen deployment</h2></div><span className="readiness">{7 + Number(capabilities.quran.available) + Number(capabilities.transcription) + Number(capabilities.ffmpeg) + Number(capabilities.persistence?.healthy) + Number(capabilities.storage?.healthy) + Number(capabilities.queue?.healthy)} dari 13 aktif</span></div><div className="checklist">{[
+                {settingsTab === "identity" && <>
+                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.1.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
+                  {sessionMode === "authenticated" && <div className="settings-section"><span className="section-kicker">Kolaborasi</span><h2>Anggota workspace</h2><p>Editor mengubah proyek, pemeriksa memberi komentar dan persetujuan, sedangkan viewer hanya membaca.</p><div className="member-list">{members.map((member) => <div key={member.id}><span>{member.display_name?.slice(0,2).toUpperCase() || "U"}</span><div><strong>{member.display_name}</strong><small>{member.email}</small></div><em>{member.role}</em></div>)}</div>{session.workspaces?.[0]?.role === "owner" && <form className="member-form" onSubmit={addWorkspaceMember}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="Email pengguna yang sudah terdaftar"/><select value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "reviewer" | "viewer")}><option value="editor">Editor</option><option value="reviewer">Pemeriksa</option><option value="viewer">Viewer</option></select><button className="primary-button"><Icon name="plus"/> Tambahkan</button></form>}</div>}
+                </>}
+
+                {settingsTab === "transcription" && <div className="settings-section"><span className="section-kicker">Transkripsi AI</span><h2>{capabilities.transcription ? "Layanan transkripsi aktif" : "Layanan transkripsi belum aktif"}</h2><p>Studio mengirim audio ke adaptor transkripsi Arab lalu mencocokkannya dengan korpus Al-Qur&apos;an.</p><div className="settings-grid"><label><span>Status</span><input value={capabilities.transcription ? "Aktif" : "Tidak aktif"} readOnly/></label><label><span>Model</span><input value={capabilities.transcriptionModel || "Belum tersedia"} readOnly/></label><label><span>Korpus matcher</span><input value={capabilities.quran.available ? "114 surah siap" : "Belum siap"} readOnly/></label><label><span>Batas unggah</span><input value={capabilities.maxUploadBytes ? `${Math.round(capabilities.maxUploadBytes / 1024 / 1024)} MB` : "Default server"} readOnly/></label></div><button className="secondary-button settings-action" onClick={() => activeProject ? openProject(activeProject.id, "source") : setIsNewProjectOpen(true)}><Icon name="audio"/> Uji di Studio</button></div>}
+
+                {settingsTab === "quran" && <div className="settings-section"><span className="section-kicker">Sumber Qur&apos;an</span><h2>{capabilities.quran.available ? "Korpus produksi siap" : "Korpus belum tersinkron"}</h2><p>Teks Utsmani, struktur surah, juz, rubu&apos;, halaman, serta sumber terjemahan digunakan oleh mesin pencocokan dan studio.</p><div className="settings-grid"><label><span>Surah</span><input value={`${capabilities.quran.counts?.surahs || 0} / 114`} readOnly/></label><label><span>Ayat</span><input value={`${capabilities.quran.counts?.ayahs || 0}`} readOnly/></label><label><span>Halaman</span><input value={`${capabilities.quran.counts?.pages || 0} / 604`} readOnly/></label><label><span>Sumber bahasa</span><input value={`${contentSources.length} terdaftar`} readOnly/></label></div><button className="secondary-button settings-action" onClick={() => navigate("quran")}><Icon name="book"/> Buka Pustaka Al-Qur&apos;an</button></div>}
+
+                {settingsTab === "render" && <div className="settings-section"><span className="section-kicker">Mesin render</span><h2>{capabilities.ffmpeg && capabilities.queue?.healthy ? "Render produksi siap" : "Render belum sepenuhnya siap"}</h2><p>Browser menyusun komposisi, antrean Redis mengelola pekerjaan, dan FFmpeg menghasilkan MP4 H.264 + AAC.</p><div className="settings-grid"><label><span>FFmpeg</span><input value={capabilities.ffmpeg ? "Aktif" : "Tidak aktif"} readOnly/></label><label><span>Antrean Redis</span><input value={capabilities.queue?.healthy ? "Sehat" : "Tidak sehat"} readOnly/></label><label><span>Format utama</span><input value={capabilities.ffmpeg ? "MP4 · H.264 + AAC" : "WebM browser"} readOnly/></label><label><span>Job saat ini</span><input value={`${renderJobs.length} job`} readOnly/></label></div><button className="secondary-button settings-action" onClick={() => navigate("renders")}><Icon name="play"/> Buka antrean render</button></div>}
+
+                {settingsTab === "security" && <>
+                  <div className="settings-section"><span className="section-kicker">Keamanan & pemulihan</span><h2>Data produksi terlindungi</h2><p>Status database, penyimpanan objek, sesi akun, dan backup workspace dapat diperiksa dari sini.</p><div className="settings-grid"><label><span>PostgreSQL</span><input value={capabilities.persistence?.healthy ? "Sehat" : "Tidak sehat"} readOnly/></label><label><span>Penyimpanan media</span><input value={capabilities.storage?.healthy ? `${capabilities.storage.driver} sehat` : "Tidak sehat"} readOnly/></label><label><span>Sesi</span><input value={sessionMode === "authenticated" ? "Terautentikasi" : sessionMode} readOnly/></label><label><span>Peran workspace</span><input value={session.workspaces?.[0]?.role || "lokal"} readOnly/></label></div>{sessionMode === "authenticated" && <div className="backup-actions"><button className="secondary-button backup-button" onClick={exportServerBackup}><Icon name="download"/> Unduh backup</button><input ref={restoreInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => restoreServerBackup(event.target.files?.[0])}/><button className="secondary-button backup-button" onClick={() => restoreInputRef.current?.click()}><Icon name="upload"/> Pulihkan backup</button></div>}</div>
+                  <div className="separation-card"><span><Icon name="shield"/></span><div><strong>Pagar pemisahan proyek aktif</strong><p>Repository, database, penyimpanan media, akun pengguna, domain, serta roadmap Taysriul Qur&apos;ani berdiri sendiri.</p></div></div>
+                </>}
+
+                <div className="settings-section"><div className="section-title-row"><div><span className="section-kicker">Kesiapan mesin produksi</span><h2>Komponen deployment</h2></div><span className="readiness">{5 + Number(capabilities.persistence?.healthy) + Number(capabilities.storage?.healthy) + Number(capabilities.collaboration) + Number(capabilities.queue?.healthy) + Number(capabilities.quran.available) + Number(capabilities.transcription) + Number(capabilities.ffmpeg) + Number(Boolean(capabilities.persistence?.migration))} dari 13 aktif</span></div><div className="checklist">{[
                   ["Antarmuka responsif", true, "Desktop, tablet, dan ponsel"],
                   ["Docker & pemeriksaan kesehatan", true, "Disiapkan untuk Coolify"],
                   ["Konfigurasi environment", true, "Tidak menyimpan rahasia di kode"],
@@ -1358,13 +1827,13 @@ export default function Home() {
                   ["Generator subtitle SRT/VTT/ASS", true, "Ekspor Arab, terjemahan, atau gabungan"],
                   ["Akun & workspace", Boolean(capabilities.persistence?.healthy), capabilities.persistence?.healthy ? "PostgreSQL dan sesi aman aktif" : "Aktif saat PostgreSQL tersambung"],
                   ["Penyimpanan media", Boolean(capabilities.storage?.healthy), capabilities.storage?.healthy ? `${capabilities.storage?.driver} siap` : "Object storage belum aktif"],
+                  ["Pustaka Media v1.1", Boolean(capabilities.persistence?.migration), capabilities.persistence?.migration ? `Migration ${capabilities.persistence.migration}` : "Migration media belum terdeteksi"],
                   ["Kolaborasi & audit", Boolean(capabilities.collaboration), capabilities.collaboration ? "Peran, komentar, persetujuan, audit aktif" : "Aktif bersama database"],
                   ["Antrean render", Boolean(capabilities.queue?.healthy), capabilities.queue?.healthy ? "Redis dan worker siap" : "Aktif saat Redis tersambung"],
                   ["Korpus 114 surah", capabilities.quran.available, capabilities.quran.available ? "6.236 ayat tervalidasi" : "Sinkron otomatis saat container aktif"],
                   ["Layanan transkripsi AI", capabilities.transcription, capabilities.transcription ? "Endpoint aktif" : "Provider belum diisi"],
                   ["Render FFmpeg MP4", capabilities.ffmpeg, capabilities.ffmpeg ? "H.264 + AAC aktif" : "Aktif di image Docker"],
                 ].map(([label, ready, copy]) => <div key={String(label)}><span className={ready ? "done" : "pending"}>{ready ? <Icon name="check" size={14}/> : <Icon name="clock" size={14}/>}</span><div><strong>{label}</strong><small>{copy}</small></div><em>{ready ? "Siap" : "Berikutnya"}</em></div>)}</div></div>
-                <div className="separation-card"><span><Icon name="shield"/></span><div><strong>Pagar pemisahan proyek aktif</strong><p>Repository, database, penyimpanan media, akun pengguna, domain, serta roadmap Taysriul Qur&apos;ani berdiri sendiri.</p></div></div>
               </section>
             </div>
           </div>
@@ -1372,7 +1841,7 @@ export default function Home() {
       </main>
 
       <nav className="mobile-nav" aria-label="Navigasi seluler">
-        {navItems.slice(0, 5).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}
+        {navItems.slice(0, 6).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}
       </nav>
 
       {isNewProjectOpen && (
@@ -1381,7 +1850,7 @@ export default function Home() {
             <div className="modal-head"><span className="upload-icon"><Icon name="plus"/></span><button type="button" className="icon-button" onClick={() => setIsNewProjectOpen(false)} aria-label="Tutup"><Icon name="close"/></button></div>
             <span className="section-kicker">Proyek baru</span><h2>Mulai produksi Qur&apos;an</h2><p>Beri nama yang mudah dikenali. Audio dapat ditambahkan setelah ruang studio dibuka.</p>
             <label><span>Nama proyek</span><input autoFocus value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder="Contoh: Surah Ar-Rahman untuk YouTube"/></label>
-            <div className="modal-options"><button type="button" className="active"><i className="ratio-shape r-16-9"/><span><strong>Video horizontal</strong><small>YouTube · 16:9</small></span><Icon name="check"/></button><button type="button"><i className="ratio-shape r-9-16"/><span><strong>Video vertikal</strong><small>Reels · 9:16</small></span></button></div>
+            <div className="modal-options"><button type="button" className={newProjectRatio === "16:9" ? "active" : ""} onClick={() => setNewProjectRatio("16:9")}><i className="ratio-shape r-16-9"/><span><strong>Video horizontal</strong><small>YouTube · 16:9</small></span>{newProjectRatio === "16:9" && <Icon name="check"/>}</button><button type="button" className={newProjectRatio === "9:16" ? "active" : ""} onClick={() => setNewProjectRatio("9:16")}><i className="ratio-shape r-9-16"/><span><strong>Video vertikal</strong><small>Reels · 9:16</small></span>{newProjectRatio === "9:16" && <Icon name="check"/>}</button></div>
             <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setIsNewProjectOpen(false)}>Batal</button><button type="submit" className="primary-button">Buat & buka studio <Icon name="chevron"/></button></div>
           </form>
         </div>
@@ -1446,7 +1915,7 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: () => void
   );
 }
 
-function RenderJobCard({ job, onDownload }: { job: RenderJob; onDownload: () => void }) {
+function RenderJobCard({ job, onDownload, onRetry, onCancel }: { job: RenderJob; onDownload: () => void; onRetry: () => void; onCancel: () => void }) {
   const status = job.status === "complete" ? "Selesai" : job.status === "failed" ? "Gagal" : job.status === "cancelled" ? "Dibatalkan" : job.status === "queued" ? "Menunggu" : "Memproses";
   return <article>
     <div className="render-thumb"><span className="brand-mark compact"><span>ت</span></span><small>{job.ratio}</small></div>
@@ -1455,6 +1924,11 @@ function RenderJobCard({ job, onDownload }: { job: RenderJob; onDownload: () => 
       <small>{job.resolution} · {job.format}{job.format === "MP4" ? " · H.264" : " · browser"}</small>
       {job.error ? <p className="render-error">{job.error}</p> : <div className="job-progress"><i style={{width:`${job.progress}%`}}/><span>{job.progress}%</span></div>}
     </div>
-    {job.outputUrl ? <button className="download-result" onClick={onDownload}><Icon name="download" size={16}/> Unduh</button> : <span className="render-wait"><Icon name={job.status === "failed" ? "close" : "clock"} size={17}/></span>}
+    <div className="render-card-actions">
+      {job.outputUrl && <button className="download-result" onClick={onDownload}><Icon name="download" size={16}/> Unduh</button>}
+      {job.status === "failed" && <button className="render-retry" onClick={onRetry}>Coba lagi</button>}
+      {(job.status === "queued" || job.status === "processing") && <button className="render-cancel" onClick={onCancel}>Batalkan</button>}
+      {!job.outputUrl && !["failed", "queued", "processing"].includes(job.status) && <span className="render-wait"><Icon name="clock" size={17}/></span>}
+    </div>
   </article>;
 }

@@ -30,3 +30,12 @@
 - Validasi MIME berbasis header mengurangi risiko, tetapi antivirus/malware scanner eksternal tetap disarankan untuk layanan publik.
 - API backup aplikasi mencakup metadata proyek; backup penuh memerlukan PostgreSQL dan object storage.
 - Kebenaran ayat tetap membutuhkan pemeriksaan manusia sebelum publikasi.
+
+## v1.1.0 media hardening
+
+- Upload media diverifikasi menggunakan signature/magic bytes selain `Content-Type`.
+- Nama file dibersihkan dari karakter CR/LF dan dibatasi panjangnya.
+- Media dihapus secara lunak (archive) secara default. Hapus permanen hanya untuk owner dan ditolak ketika aset masih direferensikan proyek/render.
+- Signed/local download tetap memerlukan session + workspace access.
+- Endpoint upload dan render memiliki rate limit per alamat klien.
+- Metadata Qur'an dibatasi pada nomor surah 1–114 dan rentang ayat positif.

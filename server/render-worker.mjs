@@ -1,4 +1,4 @@
-// @phase TQ-05 — isolated FFmpeg worker for durable MP4 jobs.
+// @phase TQ-05/TQ-10 — isolated FFmpeg worker for durable, cancellable MP4 jobs.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -40,6 +40,16 @@ async function transcode(job, record, input, output) {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
     let progressBuffer = "";
+    let cancelled = false;
+    const cancellationTimer = setInterval(async () => {
+      try {
+        const state = await query("SELECT cancel_requested FROM tq_render_jobs WHERE id=$1", [record.id]);
+        if (state.rows[0]?.cancel_requested) {
+          cancelled = true;
+          child.kill("SIGTERM");
+        }
+      } catch {}
+    }, 1500);
     child.stdout.on("data", async (chunk) => {
       progressBuffer += String(chunk);
       const blocks = progressBuffer.split("\n");
@@ -54,8 +64,12 @@ async function transcode(job, record, input, output) {
       }
     });
     child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-8_000); });
-    child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(stderr || `FFmpeg keluar dengan kode ${code}`)));
+    child.on("error", (error) => { clearInterval(cancellationTimer); reject(error); });
+    child.on("exit", (code) => {
+      clearInterval(cancellationTimer);
+      if (cancelled) return reject(Object.assign(new Error("Render dibatalkan pengguna."), { code: "RENDER_CANCELLED" }));
+      return code === 0 ? resolve() : reject(new Error(stderr || `FFmpeg keluar dengan kode ${code}`));
+    });
   });
 }
 
@@ -74,15 +88,24 @@ const worker = new Worker("tq-render", async (job) => {
   try {
     await query("UPDATE tq_render_jobs SET status='processing',attempts=attempts+1,started_at=COALESCE(started_at,now()),progress=2,error=NULL WHERE id=$1", [record.id]);
     await writeFile(input, await getBuffer(record.storage_key), { mode: 0o600 });
-    await transcode(job, record, input, output);
+    try {
+      await transcode(job, record, input, output);
+    } catch (error) {
+      if (error?.code === "RENDER_CANCELLED") {
+        await query("UPDATE tq_render_jobs SET status='cancelled',progress=0,finished_at=now(),error=NULL WHERE id=$1", [record.id]);
+        await query("INSERT INTO tq_audit_log(workspace_id,actor_id,action,entity_type,entity_id,detail) VALUES($1,$2,'render.cancelled','render',$3,$4)", [record.workspace_id, record.requested_by, record.id, { duringProcessing: true }]);
+        return { cancelled: true };
+      }
+      throw error;
+    }
     const outputBuffer = await readFile(output);
     const key = storageKey(record.workspace_id, record.project_id, "render-output", "mp4");
     const stored = await putBuffer(key, outputBuffer, "video/mp4");
     const outputId = randomUUID();
     await query(
-      `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum)
-       VALUES($1,$2,$3,$4,'render-output',$5,$6,'video/mp4',$7,$8)`,
-      [outputId, record.workspace_id, record.project_id, record.requested_by, stored.key, `${record.preset?.title || "taysriul-qurani"}.mp4`, stored.sizeBytes, stored.checksum],
+      `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum,analysis_status,metadata)
+       VALUES($1,$2,$3,$4,'render-output',$5,$6,'video/mp4',$7,$8,'analyzed',$9)`,
+      [outputId, record.workspace_id, record.project_id, record.requested_by, stored.key, `${record.preset?.title || "taysriul-qurani"}.mp4`, stored.sizeBytes, stored.checksum, { renderJobId: record.id, preset: record.preset || {} }],
     );
     await query("UPDATE tq_render_jobs SET status='complete',progress=100,output_asset_id=$1,finished_at=now() WHERE id=$2", [outputId, record.id]);
     await query("INSERT INTO tq_audit_log(workspace_id,actor_id,action,entity_type,entity_id,detail) VALUES($1,$2,'render.completed','render',$3,$4)", [record.workspace_id, record.requested_by, record.id, { outputAssetId: outputId, sizeBytes: stored.sizeBytes }]);
@@ -94,7 +117,7 @@ const worker = new Worker("tq-render", async (job) => {
 
 worker.on("failed", async (job, error) => {
   if (!job?.data?.jobId) return;
-  await query("UPDATE tq_render_jobs SET status='failed',error=$1,finished_at=now() WHERE id=$2", [String(error.message || error).slice(0, 8_000), job.data.jobId]).catch(() => {});
+  await query("UPDATE tq_render_jobs SET status='failed',error=$1,finished_at=now() WHERE id=$2 AND status<>'cancelled'", [String(error.message || error).slice(0, 8_000), job.data.jobId]).catch(() => {});
 });
 
 worker.on("error", (error) => console.error("Render worker error:", error.message));

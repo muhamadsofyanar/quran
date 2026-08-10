@@ -39,3 +39,11 @@
 - Tanpa Redis: render langsung browser/FFmpeg masih tersedia, tetapi tidak tahan penutupan halaman.
 - Tanpa S3: storage lokal dapat dipakai untuk pengembangan satu server.
 - Tanpa model AI: pengguna tetap dapat menambah segmen secara manual.
+
+## v1.1.0 — Media Library and production pipeline
+
+`TQ-07` menambahkan metadata Pustaka Media pada `tq_media_assets` tanpa memindahkan objek yang sudah ada. Project menyimpan `audioAssetId`/`backgroundAssetId`; browser memuat ulang objek melalui endpoint download/inline sehingga refresh tidak meminta unggah ulang.
+
+Audio Qur'an dapat berupa satu file per surah atau satu file per ayat. Alignment tidak memotong audio secara destruktif: marker ayat disimpan pada state proyek dan metadata aset. Render ayat menggunakan rentang marker tersebut, sedangkan render surah memakai sumber utuh.
+
+`TQ-10` mempertahankan pemisahan komposisi browser dan transkode server. WebM komposisi masuk Redis/BullMQ, worker FFmpeg menghasilkan MP4, lalu output dicatat sebagai aset `render-output` sehingga dapat dipakai sebagai arsip produksi.

@@ -1,18 +1,7 @@
 import type { Metadata } from "next";
 
-// @phase TQ-01 — product metadata and Indonesian document shell.
-import { Geist, Geist_Mono } from "next/font/google";
+// @phase TQ-11 — deterministic product metadata without remote font dependencies.
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Taysriul Qur'ani — Studio Video Al-Qur'an",
@@ -28,9 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="id">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

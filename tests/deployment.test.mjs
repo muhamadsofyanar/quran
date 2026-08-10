@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("Coolify stack includes durable data, queue, AI, and isolated renderer", async () => {
   const [dockerfile, compose] = await Promise.all([read("../Dockerfile"), read("../docker-compose.coolify.yml")]);
-  assert.match(dockerfile, /apt-get install[^\n]*ffmpeg/);
+  assert.match(dockerfile, /apt-get install[\s\S]*ffmpeg/);
   assert.match(dockerfile, /VOLUME \["\/app\/data"\]/);
   assert.match(compose, /tq-data:\/app\/data/);
   assert.match(compose, /transcriber:/);
@@ -30,6 +30,10 @@ test("production platform ships authentication, immutable audit, storage, and re
   assert.match(platform, /\/api\/v1\/restore/);
   assert.match(migration, /append-only/);
   assert.match(migration, /tq_memberships/);
+  const migration2 = await read("../server/migrations/002-media-library.sql");
+  assert.match(migration2, /scope/);
+  assert.match(migration2, /analysis_status/);
+  assert.match(migration2, /cancel_requested/);
 });
 
 test("media gateway exposes real transcode and validated corpus paths", async () => {
@@ -49,4 +53,18 @@ test("local transcription service is pinned and OpenAI-compatible", async () => 
   assert.match(application, /\/v1\/audio\/transcriptions/);
   assert.match(application, /word_timestamps=True/);
   assert.match(application, /language.*"ar"/s);
+});
+
+
+test("TQ-07 sampai TQ-11 menyediakan pustaka media, retry render, dan indeks 114 surah", async () => {
+  const [platform, queue, server, page] = await Promise.all([read("../server/platform-api.mjs"), read("../server/render-queue.mjs"), read("../server/index.mjs"), read("../app/page.tsx")]);
+  assert.match(platform, /request.method === "GET"/);
+  assert.match(platform, /inferQuranAudioMetadata/);
+  assert.match(platform, /analysis_status/);
+  assert.match(platform, /retryMatch/);
+  assert.match(queue, /retryRender/);
+  assert.match(server, /\/media-api\/quran\/surahs/);
+  assert.match(page, /Pustaka Media Qur/);
+  assert.match(page, /Batch 3 rasio/);
+  assert.match(page, /renderScope/);
 });

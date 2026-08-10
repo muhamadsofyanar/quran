@@ -1,23 +1,21 @@
 # Roadmap Taysriul Qur'ani
 
-| Fase | Cakupan | Status kode | Persentase kumulatif |
-|---|---|---:|---:|
-| TQ-01 | Fondasi produk dan studio | Selesai | 20% |
-| TQ-02 | Subtitle, korpus, transkripsi, render dasar | Selesai | 40% |
-| TQ-03 | Akun, PostgreSQL, storage, autosave, backup | Selesai | 65% |
-| TQ-04 | Alignment tingkat lanjut dan registri sumber | Selesai | 78% |
-| TQ-05 | Redis, worker, retry, progress, MP4 permanen | Selesai | 90% |
-| TQ-06 | Kolaborasi, keamanan, operasi, rilis | Selesai | 100% |
+## Selesai pada v1.1.0
 
-## Setelah 100% pra-deployment
+| Fase | Fokus | Status |
+|---|---|---|
+| TQ-07 | Pustaka Media Qur'an per surah/per ayat | Selesai |
+| TQ-08 | Alignment Engine v2 + guardrail | Selesai |
+| TQ-09 | Studio profesional | Selesai |
+| TQ-10 | Render/batch/retry/cancel | Selesai |
+| TQ-11 | Hardening, migration, observability, test | Selesai |
 
-Gerbang berikut bukan pengembangan fitur baru:
+## Gerbang runtime yang tetap perlu diuji setelah deploy
 
-1. Unggah manual ke GitHub.
-2. Deploy Docker Compose di Coolify.
-3. Hubungkan domain `taysriulqurani.id` dan pastikan TLS aktif.
-4. Tunggu unduhan model faster-whisper pertama.
-5. Jalankan benchmark audio murottal nyata dan catat akurasinya.
-6. Aktifkan hanya sumber terjemahan/tafsir yang lisensinya telah diverifikasi.
+1. Benchmark beberapa qari dan surah panjang pada CPU VPS aktual.
+2. Verifikasi hasil timestamp ayat pada audio dengan isti'adzah, basmalah, pengulangan, dan jeda panjang.
+3. Uji render 4K dan batch tiga rasio terhadap RAM/CPU aktual.
+4. Verifikasi lisensi setiap sumber terjemahan/tafsir sebelum diaktifkan.
+5. Jadwalkan backup PostgreSQL dan bucket MinIO di level infrastruktur.
 
-Perubahan setelah rilis dicatat sebagai v1.0.x untuk perbaikan atau v1.1 untuk kemampuan baru.
+Gerbang runtime tidak mengubah kelengkapan source; hasilnya menentukan tuning operasional server.

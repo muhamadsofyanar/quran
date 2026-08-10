@@ -1,4 +1,4 @@
-// @phase TQ-05 — Redis/BullMQ render queue with retry and cancellation.
+// @phase TQ-05/TQ-10 — Redis/BullMQ render queue with retry and cancellation.
 
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
@@ -44,6 +44,17 @@ export async function cancelQueuedRender(jobId) {
     return true;
   }
   return false;
+}
+
+export async function retryRender(jobId) {
+  const active = renderQueue();
+  if (!active) throw Object.assign(new Error("Redis belum dikonfigurasi."), { statusCode: 503, code: "QUEUE_NOT_CONFIGURED" });
+  const job = await active.getJob(jobId);
+  if (!job) return false;
+  const state = await job.getState();
+  if (state !== "failed") return false;
+  await job.retry();
+  return true;
 }
 
 export async function queueStatus() {

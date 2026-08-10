@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
-/* @phase TQ-06 — responsive visual system for the independent production studio. */
+/* @phase TQ-06/TQ-07/TQ-09/TQ-10 — responsive visual system for the production studio and media library. */
 
 :root {
+  --font-geist-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --ink: #12251f;
   --muted: #68766f;
   --muted-2: #8b9690;
@@ -729,7 +731,7 @@ button.surah-row:hover { background: #f6faf7; }
   .separation-card { margin: 15px 17px 19px; }
   .modal { padding: 20px; }
   .modal-options { grid-template-columns: 1fr; }
-  .mobile-nav { position: fixed; z-index: 50; left: 8px; right: 8px; bottom: 8px; display: grid; grid-template-columns: repeat(5,1fr); height: 56px; padding: 5px; border: 1px solid rgba(213,222,216,.9); border-radius: 15px; background: rgba(255,255,255,.94); box-shadow: 0 16px 40px rgba(20,49,39,.18); backdrop-filter: blur(16px); }
+  .mobile-nav { position: fixed; z-index: 50; left: 8px; right: 8px; bottom: 8px; display: grid; grid-template-columns: repeat(6,1fr); height: 56px; padding: 5px; border: 1px solid rgba(213,222,216,.9); border-radius: 15px; background: rgba(255,255,255,.94); box-shadow: 0 16px 40px rgba(20,49,39,.18); backdrop-filter: blur(16px); }
   .mobile-nav button { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; border: 0; border-radius: 10px; color: #7d8a83; background: transparent; font-size: 7px; cursor: pointer; }
   .mobile-nav button.active { color: var(--green); background: var(--green-soft); }
   .mobile-nav .icon { width: 17px; height: 17px; }
@@ -739,3 +741,82 @@ button.surah-row:hover { background: #f6faf7; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* @phase TQ-06.1 — interactive UI completion */
+.settings-action { margin-top: 18px; }
+.library-empty { padding: 24px 16px; color: var(--muted); text-align: center; font-size: 9px; }
+.quran-preview-card { margin-bottom: 16px; padding: 13px; border: 1px solid #cfe0d7; border-radius: 11px; background: #f3f8f5; }
+.quran-preview-card h2 { margin: 4px 0 8px; }
+.quran-preview-card p { max-height: 100px; margin: 0; overflow: auto; color: #28483c; font-family: 'Traditional Arabic','Noto Naskh Arabic','Amiri',serif; font-size: 18px; line-height: 1.9; }
+.quran-preview-card small { display: block; margin-top: 8px; color: var(--muted); font-size: 8px; }
+button.surah-row:disabled { cursor: wait; opacity: .72; }
+.canvas-stage:fullscreen { padding: 4vw; background: #101713; }
+.canvas-stage:fullscreen .video-canvas { width: min(92vw, 1500px); max-height: 92vh; }
+
+/* @phase TQ-07/TQ-10 — persistent media library and production controls. */
+.media-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:22px; }
+.media-summary article { display:flex; align-items:center; gap:12px; min-height:82px; padding:14px; border:1px solid var(--line); border-radius:13px; background:#fff; }
+.media-summary article > div { display:flex; flex-direction:column; min-width:0; }
+.media-summary small { color:var(--muted); font-size:8px; }
+.media-summary strong { margin-top:2px; font:600 20px/1.1 Georgia,serif; }
+.media-summary em { margin-top:3px; color:var(--muted-2); font-size:7px; font-style:normal; }
+.media-filters { margin-top:14px; }
+.media-scope-filters { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:10px 0 14px; color:var(--muted); font-size:8px; }
+.media-scope-filters > span { margin-right:3px; font-weight:700; }
+.media-scope-filters button { min-height:29px; padding:0 10px; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#fff; font-size:8px; cursor:pointer; }
+.media-scope-filters button.active { color:var(--green); border-color:#b8d4c5; background:var(--green-soft); }
+.media-scope-filters .media-refresh { display:inline-flex; align-items:center; gap:5px; margin-left:auto; }
+.media-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; }
+.media-card { display:grid; grid-template-columns:46px minmax(0,1fr) auto; align-items:center; gap:12px; min-height:108px; padding:14px; border:1px solid var(--line); border-radius:13px; background:#fff; box-shadow:0 8px 24px rgba(26,55,46,.035); }
+.media-card-icon { display:grid; place-items:center; width:46px; height:46px; border-radius:13px; color:var(--green); background:var(--green-soft); }
+.media-card-icon.kind-render-output { color:#745a9b; background:var(--violet-soft); }
+.media-card-icon.kind-background,.media-card-icon.kind-logo { color:#9a722d; background:var(--gold-soft); }
+.media-card-main { min-width:0; }
+.media-card-title { display:flex; align-items:center; gap:8px; min-width:0; }
+.media-card-title > strong { min-width:0; flex:1; overflow:hidden; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.media-card-main > small { display:block; margin-top:5px; color:var(--muted); font-size:8px; }
+.media-analysis { flex:0 0 auto; padding:4px 6px; border-radius:6px; color:#756a54; background:#f1eee6; font-size:6px; font-weight:800; text-transform:uppercase; }
+.media-analysis.analyzed { color:var(--green); background:var(--green-soft); }
+.media-analysis.needs-review { color:#8a6427; background:var(--gold-soft); }
+.media-analysis.failed { color:#9c3e35; background:#fae9e7; }
+.media-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; color:var(--muted-2); font-size:7px; }
+.media-meta span + span::before { content:"•"; margin-right:8px; }
+.media-card-actions { display:flex; align-items:flex-end; justify-content:center; flex-direction:column; gap:5px; }
+.media-card-actions button { min-height:29px; padding:0 9px; font-size:7px; white-space:nowrap; }
+.media-archive { border:0; color:#8d5e57; background:transparent; cursor:pointer; }
+.media-archive:disabled { opacity:.45; cursor:wait; }
+.media-empty { margin-top:14px; }
+.media-empty p strong { color:var(--ink); }
+
+.preview-toolbar-actions { display:flex; align-items:center; gap:6px; }
+.history-button { display:grid; place-items:center; width:27px; height:27px; border:1px solid var(--line); border-radius:7px; color:#62736a; background:#fff; font-size:15px; cursor:pointer; }
+.history-button:hover { color:var(--green); border-color:#b8cfc2; }
+.video-canvas.preset-minimal { background:#09291f; }
+.video-canvas.preset-minimal::before,.video-canvas.preset-minimal .canvas-decoration { opacity:.25; }
+.video-canvas.preset-cinematic { background:radial-gradient(circle at 50% 5%,rgba(220,178,94,.22),transparent 30%),linear-gradient(145deg,#020906,#15372b 52%,#020604); }
+.video-canvas.preset-cinematic .canvas-background-scrim { background:rgba(0,9,6,.7); }
+
+.render-card-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+.render-retry,.render-cancel { min-height:31px; padding:0 9px; border:1px solid var(--line-strong); border-radius:8px; background:#fff; font-size:7px; font-weight:700; cursor:pointer; }
+.render-retry { color:var(--green); }
+.render-cancel { color:#9c4a40; }
+.render-list article { grid-template-columns:105px minmax(0,1fr) auto; }
+.render-drawer { grid-template-columns:minmax(320px,1fr) 130px 130px 140px auto; }
+
+@media (max-width: 1080px) {
+  .media-summary { grid-template-columns:repeat(2,1fr); }
+  .media-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width: 760px) {
+  .media-summary { grid-template-columns:1fr 1fr; }
+  .media-card { grid-template-columns:40px minmax(0,1fr); }
+  .media-card-actions { grid-column:1 / -1; align-items:stretch; flex-direction:row; flex-wrap:wrap; }
+  .media-scope-filters .media-refresh { margin-left:0; }
+  .render-drawer { grid-template-columns:1fr 1fr; }
+  .render-card-actions { grid-column:1 / -1; justify-content:flex-start; }
+}
+.render-buttons { display:flex; align-items:stretch; gap:6px; }
+.render-buttons .primary-button { min-width:165px; }
+.render-buttons .secondary-button { white-space:nowrap; }
+@media (max-width:760px) { .render-buttons { grid-column:1 / -1; flex-direction:column; } }

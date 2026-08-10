@@ -36,3 +36,29 @@ Menu Pengaturan → **Unduh backup** menghasilkan JSON dengan checksum. Isinya c
 - Untuk banyak render, jalankan beberapa replica worker; jangan menambah replica app tanpa shared PostgreSQL/Redis/S3.
 - GPU transcriber menggunakan konfigurasi perangkat dan compute type yang sesuai image/host.
 - 4K jauh lebih berat daripada 1080p; jadikan 1080p preset default.
+
+## Operasi v1.1.0 — TQ-07 sampai TQ-11
+
+### Pustaka Media
+
+`GET /api/v1/assets` menampilkan aset workspace. Filter yang tersedia: `kind`, `projectId`, `scope`, `surah`, `ayah`, dan `q`. Aset yang diarsipkan disembunyikan dari daftar tetapi tetap dapat dibaca oleh proyek yang masih merujuknya.
+
+`PATCH /api/v1/assets/:id` mengubah metadata non-biner seperti nama, qari, cakupan surah/ayat, durasi, dan status analisis. `DELETE` mengarsipkan; `?hard=1` hanya untuk owner dan ditolak bila aset masih direferensikan proyek/render.
+
+### Konvensi audio Qur'an
+
+- `0001.mp3` → Surah 1 penuh.
+- `001001.mp3` atau `1-1.mp3` → QS 1:1.
+- Setelah alignment, metadata server menjadi sumber utama dan tidak lagi bergantung pada nama file.
+
+### Render
+
+`POST /api/v1/render-jobs/:id/retry` mengulang job BullMQ yang gagal dan masih tersimpan. `DELETE /api/v1/render-jobs/:id` membatalkan queued job; untuk processing job server menandai `cancel_requested` dan worker mengirim SIGTERM ke FFmpeg pada polling checkpoint.
+
+### Status sistem
+
+Owner dapat membaca `GET /api/v1/system/status` untuk jumlah proyek, media, total byte media, status render, anggota, audit event, dan migration terbaru.
+
+### Migration
+
+Startup menjalankan semua file `server/migrations/*.sql` secara berurutan. Database lama yang sudah memiliki `001-production` hanya menjalankan `002-media-library` satu kali.

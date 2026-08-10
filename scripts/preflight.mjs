@@ -8,6 +8,7 @@ const required = [
   "server/index.mjs",
   "server/render-worker.mjs",
   "server/migrations/001-production.sql",
+  "server/migrations/002-media-library.sql",
   "services/transcriber/Dockerfile",
   "docs/COOLIFY.md",
   "docs/SECURITY.md",
@@ -16,7 +17,7 @@ const required = [
 
 for (const file of required) await access(file);
 const manifest = JSON.parse(await readFile("PHASE-MANIFEST.json", "utf8"));
-if (manifest.version !== "1.0.0" || manifest.progress_percent !== 100 || manifest.current_phase !== "TQ-06") throw new Error("Manifest rilis belum final.");
+if (manifest.version !== "1.1.0" || manifest.progress_percent !== 100 || manifest.current_phase !== "TQ-11") throw new Error("Manifest rilis belum final.");
 const compose = await readFile("docker-compose.coolify.yml", "utf8");
 for (const service of ["app:", "render-worker:", "transcriber:", "postgres:", "redis:", "minio:"]) if (!compose.includes(service)) throw new Error(`Service ${service} belum ada.`);
 const ignored = await readFile(".gitignore", "utf8");

@@ -1,4 +1,4 @@
-// @phase TQ-03/TQ-06 — authenticated projects, media, review, and recovery APIs.
+// @phase TQ-03/TQ-06/TQ-07/TQ-10/TQ-11 — authenticated projects, media library, render, review, and recovery APIs.
 
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -13,8 +13,8 @@ import {
   requireWorkspaceRole,
 } from "./auth.mjs";
 import { databaseConfigured, query, withTransaction } from "./database.mjs";
-import { cancelQueuedRender, enqueueRender, queueConfigured } from "./render-queue.mjs";
-import { getDownload, putBuffer, storageKey } from "./storage.mjs";
+import { cancelQueuedRender, enqueueRender, queueConfigured, retryRender } from "./render-queue.mjs";
+import { deleteObject, getDownload, putBuffer, storageKey } from "./storage.mjs";
 
 const rateBuckets = new Map();
 
@@ -68,6 +68,43 @@ async function audit(workspaceId, actorId, action, entityType, entityId, detail 
 
 function backupChecksum(data) {
   return `sha256:${createHash("sha256").update(JSON.stringify(data)).digest("hex")}`;
+}
+
+function sniffMediaFamily(buffer) {
+  if (!buffer || buffer.length < 4) return null;
+  const head = buffer.subarray(0, 16);
+  if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return "audio"; // ID3 / MP3
+  if (head[0] === 0xff && (head[1] & 0xe0) === 0xe0) return "audio"; // MP3/AAC frame sync
+  if (head.toString("ascii", 0, 4) === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE") return "audio";
+  if (head.toString("ascii", 0, 4) === "OggS") return "audio";
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") return "video"; // MP4/M4A; accepted for audio source too
+  if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return "video"; // WebM/Matroska
+  if (head[0] === 0x89 && head.subarray(1, 4).toString("ascii") === "PNG") return "image";
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image";
+  if (head.toString("ascii", 0, 4) === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image";
+  return null;
+}
+
+export function inferQuranAudioMetadata(filename) {
+  const stem = path.basename(String(filename || ""), path.extname(String(filename || ""))).trim();
+  let match = stem.match(/^(\d{4})$/);
+  if (match) {
+    const surahNumber = Number(match[1]);
+    if (surahNumber >= 1 && surahNumber <= 114) return { scope: "surah", surahNumber, ayahStart: 1, ayahEnd: null };
+  }
+  match = stem.match(/^(\d{3})[-_ ]?(\d{3})$/);
+  if (match) {
+    const surahNumber = Number(match[1]);
+    const ayah = Number(match[2]);
+    if (surahNumber >= 1 && surahNumber <= 114 && ayah >= 1) return { scope: "ayah", surahNumber, ayahStart: ayah, ayahEnd: ayah };
+  }
+  match = stem.match(/^(\d{1,3})[-_ ](\d{1,3})$/);
+  if (match) {
+    const surahNumber = Number(match[1]);
+    const ayah = Number(match[2]);
+    if (surahNumber >= 1 && surahNumber <= 114 && ayah >= 1) return { scope: "ayah", surahNumber, ayahStart: ayah, ayahEnd: ayah };
+  }
+  return { scope: "generic", surahNumber: null, ayahStart: null, ayahEnd: null };
 }
 
 async function sessionPayload(request) {
@@ -153,37 +190,106 @@ async function handleProjects(request, response, url, helpers, session, workspac
 async function handleAssets(request, response, url, helpers, session, workspaceId) {
   const { readBody, sendJson, maxUpload } = helpers;
   const downloadMatch = url.pathname.match(/^\/api\/v1\/assets\/([a-f0-9-]+)\/download$/i);
+  const assetMatch = url.pathname.match(/^\/api\/v1\/assets\/([a-f0-9-]+)$/i);
+
+  if (url.pathname === "/api/v1/assets" && request.method === "GET") {
+    await requireWorkspaceRole(session, workspaceId);
+    const values = [workspaceId];
+    const clauses = ["workspace_id=$1"];
+    const push = (value) => { values.push(value); return `$${values.length}`; };
+    const kind = String(url.searchParams.get("kind") || "").trim();
+    const projectId = String(url.searchParams.get("projectId") || "").trim();
+    const scope = String(url.searchParams.get("scope") || "").trim();
+    const surah = Number(url.searchParams.get("surah") || 0);
+    const ayah = Number(url.searchParams.get("ayah") || 0);
+    const q = String(url.searchParams.get("q") || "").trim().slice(0, 120);
+    if (url.searchParams.get("archived") !== "1") clauses.push("archived_at IS NULL");
+    if (url.searchParams.get("includeInternal") !== "1" && kind !== "render-input") clauses.push("kind <> 'render-input'");
+    if (kind) clauses.push(`kind=${push(kind)}`);
+    if (projectId) clauses.push(`project_id=${push(projectId)}`);
+    if (["generic", "surah", "ayah"].includes(scope)) clauses.push(`scope=${push(scope)}`);
+    if (surah >= 1 && surah <= 114) clauses.push(`surah_number=${push(surah)}`);
+    if (ayah >= 1) clauses.push(`(${push(ayah)} BETWEEN COALESCE(ayah_start,1) AND COALESCE(ayah_end,ayah_start,1))`);
+    if (q) clauses.push(`(original_name ILIKE ${push(`%${q}%`)} OR COALESCE(qari,'') ILIKE $${values.length})`);
+    const result = await query(
+      `SELECT id,project_id,kind,original_name,content_type,size_bytes,checksum,scope,surah_number,ayah_start,ayah_end,qari,duration_seconds,analysis_status,metadata,archived_at,last_used_at,parent_asset_id,created_at
+       FROM tq_media_assets WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC LIMIT 500`,
+      values,
+    );
+    return sendJson(response, 200, { assets: result.rows.map((asset) => ({
+      id: asset.id,
+      projectId: asset.project_id,
+      kind: asset.kind,
+      originalName: asset.original_name,
+      contentType: asset.content_type,
+      sizeBytes: Number(asset.size_bytes || 0),
+      checksum: asset.checksum,
+      scope: asset.scope || "generic",
+      surahNumber: asset.surah_number,
+      ayahStart: asset.ayah_start,
+      ayahEnd: asset.ayah_end,
+      qari: asset.qari,
+      durationSeconds: asset.duration_seconds == null ? null : Number(asset.duration_seconds),
+      analysisStatus: asset.analysis_status || "pending",
+      metadata: asset.metadata || {},
+      archivedAt: asset.archived_at,
+      lastUsedAt: asset.last_used_at,
+      parentAssetId: asset.parent_asset_id,
+      createdAt: asset.created_at,
+      downloadUrl: `/api/v1/assets/${asset.id}/download?workspace=${encodeURIComponent(workspaceId)}`,
+      streamUrl: `/api/v1/assets/${asset.id}/download?workspace=${encodeURIComponent(workspaceId)}&disposition=inline`,
+    })) });
+  }
+
   if (url.pathname === "/api/v1/assets" && request.method === "POST") {
     await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
-    const projectId = String(url.searchParams.get("projectId") || "");
+    const projectId = String(url.searchParams.get("projectId") || "").trim() || null;
     const kind = String(url.searchParams.get("kind") || "other");
-    if (!projectId || !["audio", "background", "logo", "other"].includes(kind)) throw Object.assign(new Error("Proyek atau jenis media tidak valid."), { statusCode: 400 });
-    const ownsProject = await query("SELECT 1 FROM tq_projects WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL", [projectId, workspaceId]);
-    if (!ownsProject.rowCount) throw Object.assign(new Error("Proyek tidak ditemukan."), { statusCode: 404 });
+    if (!["audio", "background", "logo", "other"].includes(kind)) throw Object.assign(new Error("Jenis media tidak valid."), { statusCode: 400 });
+    if (projectId) {
+      const ownsProject = await query("SELECT 1 FROM tq_projects WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL", [projectId, workspaceId]);
+      if (!ownsProject.rowCount) throw Object.assign(new Error("Proyek tidak ditemukan."), { statusCode: 404 });
+    }
     const contentType = String(request.headers["content-type"] || "application/octet-stream").split(";")[0].toLowerCase();
     const allowed = kind === "audio" ? /^(audio|video)\// : kind === "background" ? /^(image|video)\// : /^(audio|video|image)\//;
     if (!allowed.test(contentType)) throw Object.assign(new Error("Jenis media tidak diizinkan."), { statusCode: 415 });
+    rateLimit(request, "asset-upload", 60, 60_000);
     const body = await readBody(request, maxUpload);
     if (!body.length) throw Object.assign(new Error("Berkas kosong."), { statusCode: 400 });
+    const detectedFamily = sniffMediaFamily(body);
+    if (!detectedFamily) throw Object.assign(new Error("Format berkas tidak dikenali dari isi berkas."), { statusCode: 415 });
+    if (kind === "audio" && !["audio", "video"].includes(detectedFamily)) throw Object.assign(new Error("Isi berkas bukan audio/video yang valid."), { statusCode: 415 });
+    if (kind === "background" && !["image", "video"].includes(detectedFamily)) throw Object.assign(new Error("Isi berkas bukan gambar/video yang valid."), { statusCode: 415 });
     const originalName = String(request.headers["x-file-name"] || `${kind}.bin`).replace(/[\r\n]/g, "").slice(0, 255);
     const extension = path.extname(originalName).slice(1) || contentType.split("/")[1] || "bin";
-    const key = storageKey(workspaceId, projectId, kind, extension);
+    const inferred = kind === "audio" ? inferQuranAudioMetadata(originalName) : { scope: "generic", surahNumber: null, ayahStart: null, ayahEnd: null };
+    const scopeHeader = String(request.headers["x-media-scope"] || "");
+    const scope = ["generic", "surah", "ayah"].includes(scopeHeader) ? scopeHeader : inferred.scope;
+    const surahNumber = Math.max(0, Math.min(114, Number(request.headers["x-surah-number"] || inferred.surahNumber || 0))) || null;
+    const ayahStart = Math.max(0, Number(request.headers["x-ayah-start"] || inferred.ayahStart || 0)) || null;
+    const ayahEnd = Math.max(0, Number(request.headers["x-ayah-end"] || inferred.ayahEnd || 0)) || ayahStart;
+    const qari = String(request.headers["x-qari"] || "").trim().slice(0, 160) || null;
+    const durationSeconds = Math.max(0, Number(request.headers["x-duration-seconds"] || 0)) || null;
+    const key = storageKey(workspaceId, projectId || "shared", kind, extension);
     const stored = await putBuffer(key, body, contentType);
     const id = randomUUID();
     await query(
-      `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, workspaceId, projectId, session.user.id, kind, stored.key, originalName, contentType, stored.sizeBytes, stored.checksum],
+      `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum,scope,surah_number,ayah_start,ayah_end,qari,duration_seconds)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [id, workspaceId, projectId, session.user.id, kind, stored.key, originalName, contentType, stored.sizeBytes, stored.checksum, scope, surahNumber, ayahStart, ayahEnd, qari, durationSeconds],
     );
-    await audit(workspaceId, session.user.id, "asset.uploaded", "asset", id, { kind, sizeBytes: stored.sizeBytes, checksum: stored.checksum });
-    return sendJson(response, 201, { asset: { id, kind, originalName, contentType, sizeBytes: stored.sizeBytes, checksum: stored.checksum } });
+    await audit(workspaceId, session.user.id, "asset.uploaded", "asset", id, { kind, scope, surahNumber, ayahStart, ayahEnd, sizeBytes: stored.sizeBytes, checksum: stored.checksum });
+    return sendJson(response, 201, { asset: { id, projectId, kind, originalName, contentType, sizeBytes: stored.sizeBytes, checksum: stored.checksum, scope, surahNumber, ayahStart, ayahEnd, qari, durationSeconds, analysisStatus: "pending" } });
   }
+
   if (downloadMatch && request.method === "GET") {
     await requireWorkspaceRole(session, workspaceId);
     const result = await query("SELECT * FROM tq_media_assets WHERE id=$1 AND workspace_id=$2", [downloadMatch[1], workspaceId]);
     const asset = result.rows[0];
     if (!asset) return sendJson(response, 404, { error: "Media tidak ditemukan." });
-    const download = await getDownload(asset.storage_key, asset.original_name, asset.content_type);
+    const disposition = url.searchParams.get("disposition") === "inline" ? "inline" : "attachment";
+    const download = await getDownload(asset.storage_key, asset.original_name, asset.content_type, disposition);
+    await query("UPDATE tq_media_assets SET last_used_at=now() WHERE id=$1", [asset.id]).catch(() => {});
     if (download.redirect) {
       response.writeHead(302, { location: download.redirect, "cache-control": "private, no-store" });
       return response.end();
@@ -191,11 +297,61 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
     response.writeHead(200, {
       "content-type": asset.content_type,
       "content-length": String(download.sizeBytes),
-      "content-disposition": `attachment; filename="${asset.original_name.replace(/["\r\n]/g, "")}"`,
+      "content-disposition": `${disposition}; filename="${asset.original_name.replace(/["\r\n]/g, "")}"`,
       "cache-control": "private, no-store",
     });
     return download.stream.pipe(response);
   }
+
+  if (assetMatch && request.method === "PATCH") {
+    await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
+    const payload = await jsonBody(request, readBody, 1_000_000);
+    const current = await query("SELECT * FROM tq_media_assets WHERE id=$1 AND workspace_id=$2", [assetMatch[1], workspaceId]);
+    if (!current.rowCount) return sendJson(response, 404, { error: "Media tidak ditemukan." });
+    const row = current.rows[0];
+    const scope = ["generic", "surah", "ayah"].includes(payload.scope) ? payload.scope : row.scope;
+    const surahNumber = payload.surahNumber === null ? null : payload.surahNumber === undefined ? row.surah_number : Math.max(1, Math.min(114, Number(payload.surahNumber) || 1));
+    const ayahStart = payload.ayahStart === null ? null : payload.ayahStart === undefined ? row.ayah_start : Math.max(1, Number(payload.ayahStart) || 1);
+    const ayahEnd = payload.ayahEnd === null ? null : payload.ayahEnd === undefined ? row.ayah_end : Math.max(ayahStart || 1, Number(payload.ayahEnd) || ayahStart || 1);
+    const analysisStatus = ["pending", "analyzing", "analyzed", "needs-review", "failed"].includes(payload.analysisStatus) ? payload.analysisStatus : row.analysis_status;
+    const originalName = payload.originalName === undefined ? row.original_name : String(payload.originalName || row.original_name).replace(/[\r\n]/g, "").slice(0, 255);
+    const qari = payload.qari === undefined ? row.qari : String(payload.qari || "").trim().slice(0, 160) || null;
+    const durationSeconds = payload.durationSeconds === undefined ? row.duration_seconds : Math.max(0, Number(payload.durationSeconds) || 0) || null;
+    const metadata = payload.metadata && typeof payload.metadata === "object" ? { ...(row.metadata || {}), ...payload.metadata } : row.metadata || {};
+    const result = await query(
+      `UPDATE tq_media_assets SET original_name=$1,scope=$2,surah_number=$3,ayah_start=$4,ayah_end=$5,qari=$6,duration_seconds=$7,analysis_status=$8,metadata=$9,last_used_at=now()
+       WHERE id=$10 AND workspace_id=$11 RETURNING *`,
+      [originalName, scope, surahNumber, ayahStart, ayahEnd, qari, durationSeconds, analysisStatus, metadata, assetMatch[1], workspaceId],
+    );
+    await audit(workspaceId, session.user.id, "asset.updated", "asset", assetMatch[1], { scope, surahNumber, ayahStart, ayahEnd, analysisStatus });
+    const asset = result.rows[0];
+    return sendJson(response, 200, { asset: { id: asset.id, projectId: asset.project_id, kind: asset.kind, originalName: asset.original_name, contentType: asset.content_type, sizeBytes: Number(asset.size_bytes || 0), checksum: asset.checksum, scope: asset.scope, surahNumber: asset.surah_number, ayahStart: asset.ayah_start, ayahEnd: asset.ayah_end, qari: asset.qari, durationSeconds: asset.duration_seconds == null ? null : Number(asset.duration_seconds), analysisStatus: asset.analysis_status, metadata: asset.metadata || {}, createdAt: asset.created_at } });
+  }
+
+  if (assetMatch && request.method === "DELETE") {
+    const role = await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
+    const current = await query("SELECT * FROM tq_media_assets WHERE id=$1 AND workspace_id=$2", [assetMatch[1], workspaceId]);
+    if (!current.rowCount) return sendJson(response, 404, { error: "Media tidak ditemukan." });
+    const asset = current.rows[0];
+    const hard = url.searchParams.get("hard") === "1";
+    if (!hard) {
+      await query("UPDATE tq_media_assets SET archived_at=now() WHERE id=$1 AND workspace_id=$2", [asset.id, workspaceId]);
+      await audit(workspaceId, session.user.id, "asset.archived", "asset", asset.id);
+      return sendJson(response, 200, { archived: true });
+    }
+    if (role.role !== "owner") throw Object.assign(new Error("Hapus permanen hanya dapat dilakukan pemilik workspace."), { statusCode: 403 });
+    const refs = await query(
+      `SELECT EXISTS(SELECT 1 FROM tq_render_jobs WHERE input_asset_id=$1 OR output_asset_id=$1) AS render_ref,
+              EXISTS(SELECT 1 FROM tq_projects WHERE workspace_id=$2 AND deleted_at IS NULL AND (state->>'audioAssetId'=$1 OR state->>'backgroundAssetId'=$1)) AS project_ref`,
+      [asset.id, workspaceId],
+    );
+    if (refs.rows[0]?.render_ref || refs.rows[0]?.project_ref) return sendJson(response, 409, { error: "Media masih digunakan proyek atau render. Arsipkan saja atau lepaskan dari proyek terlebih dahulu." });
+    await deleteObject(asset.storage_key);
+    await query("DELETE FROM tq_media_assets WHERE id=$1 AND workspace_id=$2", [asset.id, workspaceId]);
+    await audit(workspaceId, session.user.id, "asset.deleted", "asset", asset.id, { permanent: true });
+    return sendJson(response, 200, { deleted: true });
+  }
+
   return false;
 }
 
@@ -263,10 +419,11 @@ async function handleCollaboration(request, response, url, helpers, session, wor
 async function handleRenderJobs(request, response, url, helpers, session, workspaceId) {
   const { readBody, sendJson, maxUpload } = helpers;
   const jobMatch = url.pathname.match(/^\/api\/v1\/render-jobs\/([a-f0-9-]+)$/i);
+  const retryMatch = url.pathname.match(/^\/api\/v1\/render-jobs\/([a-f0-9-]+)\/retry$/i);
   if (url.pathname === "/api/v1/render-jobs" && request.method === "GET") {
     await requireWorkspaceRole(session, workspaceId);
     const result = await query(
-      `SELECT id,project_id,status,progress,preset,attempts,error,output_asset_id,created_at,started_at,finished_at
+      `SELECT id,project_id,status,progress,preset,attempts,error,output_asset_id,created_at,started_at,finished_at,batch_id,cancel_requested
        FROM tq_render_jobs WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 200`,
       [workspaceId],
     );
@@ -275,6 +432,7 @@ async function handleRenderJobs(request, response, url, helpers, session, worksp
   if (url.pathname === "/api/v1/render-jobs" && request.method === "POST") {
     await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
     if (!queueConfigured()) throw Object.assign(new Error("Antrean Redis belum dikonfigurasi."), { statusCode: 503 });
+    rateLimit(request, "render-create", 30, 60 * 60_000);
     const projectId = String(url.searchParams.get("projectId") || "");
     const project = await query("SELECT id,title FROM tq_projects WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL", [projectId, workspaceId]);
     if (!project.rowCount) throw Object.assign(new Error("Proyek tidak ditemukan."), { statusCode: 404 });
@@ -290,19 +448,21 @@ async function handleRenderJobs(request, response, url, helpers, session, worksp
       ratio: String(request.headers["x-render-ratio"] || "16:9"),
       resolution: String(request.headers["x-render-resolution"] || "1080p"),
       duration: Math.max(1, Number(request.headers["x-render-duration"] || 1)),
+      scope: String(request.headers["x-render-scope"] || "project"),
     };
+    const batchId = String(request.headers["x-render-batch"] || "").slice(0, 80) || null;
     await withTransaction(async (client) => {
       await client.query(
-        `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum)
-         VALUES($1,$2,$3,$4,'render-input',$5,$6,$7,$8,$9)`,
+        `INSERT INTO tq_media_assets(id,workspace_id,project_id,uploaded_by,kind,storage_key,original_name,content_type,size_bytes,checksum,analysis_status)
+         VALUES($1,$2,$3,$4,'render-input',$5,$6,$7,$8,$9,'analyzed')`,
         [inputId, workspaceId, projectId, session.user.id, stored.key, `${preset.title}.webm`, contentType, stored.sizeBytes, stored.checksum],
       );
       await client.query(
-        `INSERT INTO tq_render_jobs(id,workspace_id,project_id,requested_by,input_asset_id,status,progress,preset)
-         VALUES($1,$2,$3,$4,$5,'queued',0,$6)`,
-        [jobId, workspaceId, projectId, session.user.id, inputId, preset],
+        `INSERT INTO tq_render_jobs(id,workspace_id,project_id,requested_by,input_asset_id,status,progress,preset,batch_id)
+         VALUES($1,$2,$3,$4,$5,'queued',0,$6,$7)`,
+        [jobId, workspaceId, projectId, session.user.id, inputId, preset, batchId],
       );
-      await client.query("INSERT INTO tq_audit_log(workspace_id,actor_id,action,entity_type,entity_id,detail) VALUES($1,$2,'render.queued','render',$3,$4)", [workspaceId, session.user.id, jobId, preset]);
+      await client.query("INSERT INTO tq_audit_log(workspace_id,actor_id,action,entity_type,entity_id,detail) VALUES($1,$2,'render.queued','render',$3,$4)", [workspaceId, session.user.id, jobId, { ...preset, batchId }]);
     });
     try {
       await enqueueRender(jobId);
@@ -310,13 +470,28 @@ async function handleRenderJobs(request, response, url, helpers, session, worksp
       await query("UPDATE tq_render_jobs SET status='failed',error=$1,finished_at=now() WHERE id=$2", [error.message, jobId]);
       throw error;
     }
-    return sendJson(response, 202, { job: { id: jobId, projectId, status: "queued", progress: 0, preset } });
+    return sendJson(response, 202, { job: { id: jobId, projectId, status: "queued", progress: 0, preset, batchId } });
+  }
+  if (retryMatch && request.method === "POST") {
+    await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
+    const result = await query("SELECT status FROM tq_render_jobs WHERE id=$1 AND workspace_id=$2", [retryMatch[1], workspaceId]);
+    if (!result.rowCount) return sendJson(response, 404, { error: "Render tidak ditemukan." });
+    if (result.rows[0].status !== "failed") return sendJson(response, 409, { error: "Hanya render gagal yang dapat dicoba ulang." });
+    const queued = await retryRender(retryMatch[1]);
+    if (!queued) return sendJson(response, 409, { error: "Job Redis tidak lagi tersedia untuk retry. Buat render baru." });
+    await query("UPDATE tq_render_jobs SET status='queued',progress=0,error=NULL,finished_at=NULL,cancel_requested=false WHERE id=$1", [retryMatch[1]]);
+    await audit(workspaceId, session.user.id, "render.retried", "render", retryMatch[1]);
+    return sendJson(response, 202, { retried: true });
   }
   if (jobMatch && request.method === "DELETE") {
     await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
     const result = await query("SELECT status FROM tq_render_jobs WHERE id=$1 AND workspace_id=$2", [jobMatch[1], workspaceId]);
     if (!result.rowCount) return sendJson(response, 404, { error: "Render tidak ditemukan." });
-    if (result.rows[0].status === "processing") return sendJson(response, 409, { error: "Render sedang diproses dan tidak dapat dihentikan secara aman." });
+    if (result.rows[0].status === "processing") {
+      await query("UPDATE tq_render_jobs SET cancel_requested=true WHERE id=$1 AND workspace_id=$2", [jobMatch[1], workspaceId]);
+      await audit(workspaceId, session.user.id, "render.cancel-requested", "render", jobMatch[1]);
+      return sendJson(response, 202, { cancelRequested: true, note: "Worker akan menghentikan job pada checkpoint aman berikutnya." });
+    }
     await cancelQueuedRender(jobMatch[1]);
     await query("UPDATE tq_render_jobs SET status='cancelled',finished_at=now() WHERE id=$1 AND workspace_id=$2 AND status IN ('queued','failed')", [jobMatch[1], workspaceId]);
     await audit(workspaceId, session.user.id, "render.cancelled", "render", jobMatch[1]);
@@ -327,16 +502,38 @@ async function handleRenderJobs(request, response, url, helpers, session, worksp
 
 async function handleRecovery(request, response, url, helpers, session, workspaceId) {
   const { readBody, sendJson } = helpers;
+  if (url.pathname === "/api/v1/system/status" && request.method === "GET") {
+    await requireWorkspaceRole(session, workspaceId, ["owner"]);
+    const [projects, assets, renders, members, auditEvents, migration] = await Promise.all([
+      query("SELECT count(*)::int AS count FROM tq_projects WHERE workspace_id=$1 AND deleted_at IS NULL", [workspaceId]),
+      query("SELECT count(*)::int AS count,COALESCE(sum(size_bytes),0)::bigint AS bytes FROM tq_media_assets WHERE workspace_id=$1 AND archived_at IS NULL", [workspaceId]),
+      query("SELECT status,count(*)::int AS count FROM tq_render_jobs WHERE workspace_id=$1 GROUP BY status", [workspaceId]),
+      query("SELECT count(*)::int AS count FROM tq_memberships WHERE workspace_id=$1", [workspaceId]),
+      query("SELECT count(*)::int AS count FROM tq_audit_log WHERE workspace_id=$1", [workspaceId]),
+      query("SELECT version,applied_at FROM tq_schema_migrations ORDER BY applied_at DESC,version DESC LIMIT 1"),
+    ]);
+    return sendJson(response, 200, {
+      workspaceId,
+      projects: projects.rows[0]?.count || 0,
+      media: { count: assets.rows[0]?.count || 0, bytes: Number(assets.rows[0]?.bytes || 0) },
+      renders: Object.fromEntries(renders.rows.map((item) => [item.status, item.count])),
+      members: members.rows[0]?.count || 0,
+      auditEvents: auditEvents.rows[0]?.count || 0,
+      migration: migration.rows[0] || null,
+      checkedAt: new Date().toISOString(),
+    });
+  }
   if (url.pathname === "/api/v1/backup" && request.method === "GET") {
     await requireWorkspaceRole(session, workspaceId, ["owner"]);
-    const [workspace, projects, comments, approvals, assets] = await Promise.all([
+    const [workspace, projects, comments, approvals, assets, renderJobs] = await Promise.all([
       query("SELECT id,name,slug,created_at,updated_at FROM tq_workspaces WHERE id=$1", [workspaceId]),
       query("SELECT id,title,state,version,created_at,updated_at FROM tq_projects WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY created_at", [workspaceId]),
       query("SELECT id,project_id,user_id,at_seconds,body,resolved_at,created_at FROM tq_comments WHERE workspace_id=$1 ORDER BY created_at", [workspaceId]),
       query("SELECT id,project_id,reviewer_id,project_version,decision,note,created_at FROM tq_approvals WHERE workspace_id=$1 ORDER BY created_at", [workspaceId]),
-      query("SELECT id,project_id,kind,original_name,content_type,size_bytes,checksum,created_at FROM tq_media_assets WHERE workspace_id=$1 ORDER BY created_at", [workspaceId]),
+      query("SELECT id,project_id,kind,original_name,content_type,size_bytes,checksum,scope,surah_number,ayah_start,ayah_end,qari,duration_seconds,analysis_status,metadata,archived_at,parent_asset_id,created_at FROM tq_media_assets WHERE workspace_id=$1 ORDER BY created_at", [workspaceId]),
+      query("SELECT id,project_id,status,progress,preset,attempts,error,output_asset_id,batch_id,created_at,started_at,finished_at FROM tq_render_jobs WHERE workspace_id=$1 ORDER BY created_at", [workspaceId]),
     ]);
-    const data = { workspace: workspace.rows[0], projects: projects.rows, comments: comments.rows, approvals: approvals.rows, assetManifest: assets.rows };
+    const data = { workspace: workspace.rows[0], projects: projects.rows, comments: comments.rows, approvals: approvals.rows, assetManifest: assets.rows, renderJobs: renderJobs.rows };
     const backup = { schema: "taysriul-qurani-backup", version: 1, exportedAt: new Date().toISOString(), data, checksum: backupChecksum(data) };
     await audit(workspaceId, session.user.id, "backup.exported", "workspace", workspaceId, { projects: projects.rowCount });
     response.setHeader("content-disposition", `attachment; filename="taysriul-qurani-backup-${new Date().toISOString().slice(0, 10)}.json"`);
