@@ -25,6 +25,7 @@ test("ekspor subtitle menghasilkan SRT, VTT, dan ASS valid", () => {
   assert.match(buildVtt(segments), /^WEBVTT/);
   assert.match(buildAss(segments), /\[Events\]/);
   assert.match(buildAss(segments), /Dialogue: 0/);
+  assert.match(buildAss(segments), /Style: Quran,Traditional Arabic/);
   assert.match(buildSrt(segments, "tafsir"), /Pembukaan dengan menyebut nama Allah/);
   assert.match(buildVtt(segments, "all"), /Dengan nama Allah/);
 });

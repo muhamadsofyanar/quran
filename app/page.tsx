@@ -146,6 +146,23 @@ type QuranLibraryRow = {
 
 const STORAGE_KEY = "taysriul-qurani-v0.1";
 
+// Keep preview and canvas render on the exact same Arabic font stack.
+// We intentionally rely on locally available fonts and never silently switch
+// to a different first-choice family between preview and render.
+const ARABIC_FONT_STACK = '"Traditional Arabic", "Noto Naskh Arabic", "Amiri", serif';
+const ARABIC_FONT_SAMPLE = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
+
+async function prepareArabicFont(fontSize = 64) {
+  if (typeof document === "undefined" || !document.fonts) return;
+  await document.fonts.ready;
+  try {
+    await document.fonts.load(`400 ${fontSize}px ${ARABIC_FONT_STACK}`, ARABIC_FONT_SAMPLE);
+  } catch {
+    // System fonts do not always expose load events; the identical stack still
+    // keeps preview and canvas rendering consistent on the same browser.
+  }
+}
+
 const sampleSegments: Segment[] = [
   {
     id: "seg-1",
@@ -1538,6 +1555,8 @@ export default function Home() {
       canvas.height = height;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Kanvas video tidak tersedia.");
+      const arabicRenderFontSize = Math.round(width * (outputRatio === "9:16" ? 0.063 : 0.043) * (fontScale / 100));
+      await prepareArabicFont(arabicRenderFontSize);
       const sourceAudio = audioUrl ? new Audio(audioUrl) : null;
       let fullDuration = Math.max(1, activeProject.duration || renderSegments.at(-1)?.end || 10);
       if (sourceAudio) {
@@ -1614,8 +1633,8 @@ export default function Home() {
         const fadeOut = Math.min(1, Math.max(0, (segment.end - absoluteTime) / fade));
         context.globalAlpha = Math.min(fadeIn, fadeOut, 1);
         context.textAlign = "center"; context.direction = "rtl"; context.fillStyle = "#fffdf5";
-        const arabicSize = Math.round(width * (outputRatio === "9:16" ? 0.063 : 0.043) * (fontScale / 100));
-        context.font = `600 ${arabicSize}px "Amiri", "Noto Naskh Arabic", serif`;
+        const arabicSize = arabicRenderFontSize;
+        context.font = `400 ${arabicSize}px ${ARABIC_FONT_STACK}`;
         drawWrappedText(context, segment.arabic, width / 2, height * 0.47, width * 0.82, arabicSize * 1.7);
         if (showTranslation && segment.translation) {
           context.direction = "ltr"; context.fillStyle = "rgba(255,255,255,.9)"; const translationSize = Math.round(width * (outputRatio === "9:16" ? 0.027 : 0.018));
@@ -2111,6 +2130,8 @@ export default function Home() {
                         dir="rtl"
                         style={{
                           fontSize: `${fontScale * (ratio === "16:9" ? 0.44 : ratio === "9:16" ? 0.31 : 0.37)}px`,
+                          fontFamily: ARABIC_FONT_STACK,
+                          fontWeight: 400,
                         }}
                       >
                         {selectedSegment.arabic}<span className="ayah-marker">{selectedSegment.ayah}</span>

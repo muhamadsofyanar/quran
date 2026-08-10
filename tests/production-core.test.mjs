@@ -97,3 +97,12 @@ test("QuranEnc content is fetched per-surah on demand and cached locally", async
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("studio preview and canvas render use the same Arabic font stack", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /const ARABIC_FONT_STACK =/);
+  assert.match(page, /await prepareArabicFont\(arabicRenderFontSize\)/);
+  assert.match(page, /context\.font = `400 \${arabicSize}px \${ARABIC_FONT_STACK}`/);
+  assert.match(page, /fontFamily: ARABIC_FONT_STACK/);
+});

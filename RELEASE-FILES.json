@@ -1,8 +1,8 @@
 {
-  "release": "1.2.0",
+  "release": "1.2.0-font-render-hotfix",
   "phase": "TQ-12",
-  "generated_at": "2026-08-10T11:00:00+07:00",
-  "file_count": 71,
+  "generated_at": "2026-08-10T12:23:00+07:00",
+  "file_count": 72,
   "files": [
     {
       "path": ".dockerignore",
@@ -36,8 +36,8 @@
     },
     {
       "path": "PHASE-MANIFEST.json",
-      "size": 3681,
-      "sha256": "7706a308a135266e8cf5ff3d1652015f15756c80329f364d29f29b52b647cf70"
+      "size": 4693,
+      "sha256": "b547693b38adb4c584e3d95743ec4d814805891d91084ee107f492563fa98240"
     },
     {
       "path": "README.md",
@@ -71,8 +71,8 @@
     },
     {
       "path": "app/page.tsx",
-      "size": 152848,
-      "sha256": "c649c9fff56d07536b0f5d200a9e095d5d7d6dfce91b53224434c473bc4a3cfb"
+      "size": 153870,
+      "sha256": "7be329f5ff4a02de1b4d8426a12a0d1473f682dd8406082ee1fce791605fa2cc"
     },
     {
       "path": "build/sites-vite-plugin.ts",
@@ -98,6 +98,11 @@
       "path": "docs/FUNCTION-MATRIX.md",
       "size": 1893,
       "sha256": "b699ffbfabd27d0fac7a166eb52a810ed18e07f7f185f2f902f0522342da8203"
+    },
+    {
+      "path": "docs/HOTFIX-font-render-v1.2.1.md",
+      "size": 780,
+      "sha256": "ede4ea9250ca088245be4ac3af3480dad37a47b89dca823e8181d2351986366a"
     },
     {
       "path": "docs/HOTFIX-media-stream-v1.1.1.md",
@@ -166,8 +171,8 @@
     },
     {
       "path": "lib/media-core.mjs",
-      "size": 16148,
-      "sha256": "323ec6ffdc1fcc411e75c674503391adb07b6f6a9a8117853983ab3d797f94c1"
+      "size": 16161,
+      "sha256": "9977865e44dcd1826b73165374686c2807b566ada074698948e62f00f1c3570f"
     },
     {
       "path": "next.config.ts",
@@ -331,13 +336,13 @@
     },
     {
       "path": "tests/media-core.test.mjs",
-      "size": 3760,
-      "sha256": "ca39388e8225178e9ece1cb50252df88284db0596a436fbb4fbac465472100a3"
+      "size": 3831,
+      "sha256": "a4f3ca65a886fddb322053508bc6635b853f28e143d4b804331faef86a93e943"
     },
     {
       "path": "tests/production-core.test.mjs",
-      "size": 5242,
-      "sha256": "121af4a14ba0df2d3368e819bc5b50af48e21294a1b0d900498a95cddeaa8743"
+      "size": 5683,
+      "sha256": "6c6823213ac80fa92b47a8ba418279d605f2e4703082346eb62babc1f11a8033"
     },
     {
       "path": "tests/rendered-html.test.mjs",
