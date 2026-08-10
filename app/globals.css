@@ -820,3 +820,44 @@ button.surah-row:disabled { cursor: wait; opacity: .72; }
 .render-buttons .primary-button { min-width:165px; }
 .render-buttons .secondary-button { white-space:nowrap; }
 @media (max-width:760px) { .render-buttons { grid-column:1 / -1; flex-direction:column; } }
+
+/* @phase TQ-12 — multilingual translation and tafsir layers. */
+.source-attribution {
+  display: block;
+  margin-top: -3px;
+  color: var(--muted-2);
+  font-size: 7px;
+  line-height: 1.45;
+}
+.canvas-tafsir {
+  display: -webkit-box !important;
+  max-width: 84% !important;
+  margin: 8px auto 0 !important;
+  overflow: hidden;
+  color: rgba(214,226,220,.72) !important;
+  font-size: clamp(6px,.68vw,9px) !important;
+  line-height: 1.45 !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.canvas-source-credit {
+  position: absolute;
+  z-index: 2;
+  left: 12%;
+  right: 12%;
+  bottom: 16%;
+  overflow: hidden;
+  color: rgba(207,220,214,.48);
+  font-size: 5px;
+  line-height: 1.35;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* @phase TQ-12 — licensed translation/tafsir source locking. */
+.inspector-section textarea[readonly] {
+  color: #42564e;
+  background: #f6f8f5;
+  cursor: default;
+}

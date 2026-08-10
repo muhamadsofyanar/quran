@@ -1,6 +1,6 @@
 # Roadmap Taysriul Qur'ani
 
-## Selesai pada v1.1.0
+## Selesai pada v1.2.0
 
 | Fase | Fokus | Status |
 |---|---|---|
@@ -9,13 +9,14 @@
 | TQ-09 | Studio profesional | Selesai |
 | TQ-10 | Render/batch/retry/cancel | Selesai |
 | TQ-11 | Hardening, migration, observability, test | Selesai |
+| TQ-12 | Terjemahan/tafsir multibahasa, media stream same-origin, dedupe | Selesai |
 
-## Gerbang runtime yang tetap perlu diuji setelah deploy
+## Validasi runtime setelah satu deploy
 
-1. Benchmark beberapa qari dan surah panjang pada CPU VPS aktual.
-2. Verifikasi hasil timestamp ayat pada audio dengan isti'adzah, basmalah, pengulangan, dan jeda panjang.
-3. Uji render 4K dan batch tiga rasio terhadap RAM/CPU aktual.
-4. Verifikasi lisensi setiap sumber terjemahan/tafsir sebelum diaktifkan.
-5. Jadwalkan backup PostgreSQL dan bucket MinIO di level infrastruktur.
-
-Gerbang runtime tidak mengubah kelengkapan source; hasilnya menentukan tuning operasional server.
+1. Pastikan `0001.mp3` dapat diputar langsung dari Pustaka Media tanpa upload ulang.
+2. Pastikan migration 003 menyisakan satu salinan aktif untuk file checksum yang sama.
+3. Buka Al-Fatihah dan pastikan terjemahan Kemenag muncul untuk ayat 1–7.
+4. Aktifkan Tafsir dan pastikan Al-Mukhtasar muncul sebagai layer terpisah.
+5. Uji beberapa qari/surah panjang untuk benchmark alignment pada CPU VPS aktual.
+6. Uji render 1080p, lalu 4K/batch sesuai kapasitas RAM/CPU aktual.
+7. Jadwalkan backup PostgreSQL dan object storage di tingkat infrastruktur.

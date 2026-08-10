@@ -1,11 +1,10 @@
-// @phase TQ-03/TQ-07/TQ-11 — local or S3-compatible media storage with checksums and protected deletion.
+// @phase TQ-03/TQ-07/TQ-11/TQ-12 — local or S3-compatible media storage with checksums, same-origin streaming support, and protected deletion.
 
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const localRoot = () => path.join(process.env.TQ_DATA_DIR || path.join(process.cwd(), "data"), "media");
 const driver = () => process.env.TQ_STORAGE_DRIVER || (process.env.S3_ENDPOINT ? "s3" : "local");
@@ -60,17 +59,28 @@ export async function getBuffer(key) {
 export async function getDownload(key, filename, contentType, disposition = "attachment") {
   const resolved = safeKey(key);
   if (driver() === "s3") {
-    const url = await getSignedUrl(s3Client(), new GetObjectCommand({
+    // MinIO is addressed by the private Docker hostname (for example http://minio:9000).
+    // Never redirect a browser to a presigned URL created from that private endpoint: the
+    // hostname is not resolvable outside Docker and HTTPS pages would also hit mixed-content
+    // restrictions. Stream the object through the authenticated application gateway instead.
+    const object = await s3Client().send(new GetObjectCommand({
       Bucket: process.env.S3_BUCKET,
       Key: resolved,
-      ResponseContentDisposition: `${disposition === "inline" ? "inline" : "attachment"}; filename="${String(filename).replace(/["\r\n]/g, "")}"`,
-      ResponseContentType: contentType,
-    }), { expiresIn: Math.min(3600, Math.max(60, Number(process.env.TQ_SIGNED_URL_SECONDS || 600))) });
-    return { redirect: url };
+    }));
+    if (!object.Body || typeof object.Body.pipe !== "function") {
+      throw new Error("Objek media tidak menyediakan stream yang dapat dibaca.");
+    }
+    return {
+      stream: object.Body,
+      sizeBytes: Number(object.ContentLength || 0),
+      contentType: object.ContentType || contentType,
+      disposition,
+      filename,
+    };
   }
   const target = path.join(localRoot(), resolved);
   const info = await stat(target);
-  return { stream: createReadStream(target), sizeBytes: info.size };
+  return { stream: createReadStream(target), sizeBytes: info.size, contentType, disposition, filename };
 }
 
 export async function deleteObject(key) {

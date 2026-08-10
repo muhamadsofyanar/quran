@@ -1,6 +1,6 @@
 # Panduan GitHub Manual dan Coolify
 
-Ikuti urutan ini setelah ZIP v1.1.0 diterima.
+Ikuti urutan ini setelah ZIP v1.2.0 diterima.
 
 ## 0–20% — Siapkan GitHub
 
@@ -58,7 +58,7 @@ Jangan menyalin contoh `replace-with...` dari `.env.example` sebagai nilai produ
 
 1. Tekan **Deploy**.
 2. Tunggu semua service sehat. Unduhan model AI pertama dapat membuat transcriber lebih lama siap.
-3. Buka `/media-api/health`. Hasil harus `ok: true`, versi `1.1.0`, `ffmpeg: true`, database sehat, storage sehat, dan queue sehat.
+3. Buka `/media-api/health`. Hasil harus `ok: true`, versi `1.2.0`, `ffmpeg: true`, database sehat, storage sehat, dan queue sehat.
 4. Buka aplikasi, buat akun pemilik pertama, lalu ubah `TQ_ALLOW_SIGNUP=false` bila aplikasi belum dibuka untuk umum.
 
 ## 90–100% — Uji nyata
@@ -74,6 +74,6 @@ Jangan menyalin contoh `replace-with...` dari `.env.example` sebagai nilai produ
 
 ## Catatan storage
 
-Compose menyertakan MinIO yang dipin pada rilis keamanan terakhir untuk instalasi mandiri. Repository upstream MinIO telah diarsipkan pada April 2026; untuk operasi jangka panjang pertimbangkan storage S3-compatible yang masih dipelihara, lalu ubah `S3_ENDPOINT` dan kredensial tanpa mengubah kode aplikasi.
+Compose menggunakan image MinIO `cpuv1` yang kompatibel dengan CPU VPS saat ini. Jangan mengganti tag tersebut tanpa pengujian CPU terlebih dahulu. Aplikasi juga dapat memakai endpoint S3-compatible lain melalui environment yang sama.
 
-Jangan mengaktifkan terjemahan/tafsir hanya karena URL sumber tersedia. Isi metadata lisensi, `redistributionAllowed=true`, dan `enabled=true` hanya setelah izin distribusi benar-benar diverifikasi.
+Sumber QuranEnc bawaan TQ-12 sudah dikonfigurasi dengan atribusi, versi, dan kebijakan read-only. Sumber pihak ketiga lain tetap wajib diverifikasi lisensinya sebelum diaktifkan.

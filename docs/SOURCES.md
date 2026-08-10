@@ -2,30 +2,36 @@
 
 ## Korpus utama
 
-Korpus Utsmani disinkronkan dari URL yang ditentukan `TQ_QURAN_SOURCE_URL`, lalu divalidasi menjadi tepat:
+Korpus Utsmani disinkronkan dari `TQ_QURAN_SOURCE_URL`, lalu divalidasi menjadi tepat 114 surah, 6.236 ayat, 30 juz, 604 halaman, dan 240 rubu. Hasil disimpan bersama checksum SHA-256; sinkronisasi dibatalkan bila struktur wajib tidak sesuai.
 
-- 114 surah;
-- 6.236 ayat;
-- 30 juz;
-- 604 halaman;
-- 240 rubu.
+## QuranEnc — terjemahan dan tafsir
 
-Hasil disimpan bersama checksum SHA-256. Sinkronisasi dibatalkan bila hitungan atau baris wajib tidak sesuai.
+TQ-12 menggunakan API QuranEnc untuk katalog terjemahan dan pengambilan konten per-surah. Katalog menyertakan key, bahasa, versi, tanggal pembaruan, judul, dan deskripsi. Konten surah berisi pasangan surah/ayat, terjemahan, serta footnote.
 
-## Registri edisi
+Sumber pilihan awal:
 
-`server/sources/quran-content-sources.json` adalah daftar contoh, bukan izin penggunaan. Secara bawaan semua edisi pihak ketiga dinonaktifkan.
+- `quranenc:indonesian_affairs` — Terjemahan Kementerian Agama RI.
+- `quranenc:indonesian_sabiq` — Terjemahan Indonesia PT. Sabiq/Pusat Terjemah Ruwwad.
+- `quranenc:indonesian_mokhtasar` — Tafsir Al-Mukhtasar Indonesia.
 
-Operator dapat menambahkan sumber melalui `TQ_QURAN_CONTENT_SOURCES_JSON`. Setiap sumber wajib memuat:
+Katalog global ditemukan secara dinamis saat aplikasi berjalan. Artinya bahasa/sumber baru dari katalog tidak memerlukan perubahan source Taysriul Qur'ani.
 
-- `edition`, `kind`, `language`, `name`, dan `author`;
-- `sourceUrl`;
-- `licenseName` dan `licenseUrl`;
-- `redistributionAllowed: true`;
-- `enabled: true`.
+Konten sumber tidak boleh dimodifikasi ketika digunakan sebagai edisi QuranEnc. Aplikasi karena itu:
 
-Sistem menolak sinkronisasi bila lisensi masih `verification-required` atau izin redistribusi belum benar.
+1. menyimpan teks persis sebagaimana dikembalikan sumber;
+2. menampilkan atribusi publisher dan QuranEnc;
+3. menyimpan/menampilkan versi sumber;
+4. menggunakan cache terbatas dan menemukan versi katalog terbaru kembali;
+5. membuat textarea sumber read-only; penyuntingan hanya melalui `Teks manual`.
+
+## Cache
+
+Konten QuranEnc disimpan per edisi/per surah di `TQ_DATA_DIR/quran/content`. Default TTL adalah tujuh hari (`TQ_CONTENT_CACHE_SECONDS=604800`). Katalog di-cache di memory selama enam jam.
+
+## Sumber tambahan khusus operator
+
+`TQ_QURAN_CONTENT_SOURCES_JSON` tetap dapat dipakai untuk menambah/override registri. Sumber non-QuranEnc wajib memiliki metadata lisensi dan `redistributionAllowed: true` + `enabled: true` sebelum disinkronkan.
 
 ## Mushaf Madinah
 
-Pilihan v1/v2 pada UI adalah preset tampilan. Font dan pemetaan halaman resmi hanya boleh dibundel setelah lisensi font/asetnya diperiksa. Jangan mengganti teks korpus dengan gambar atau font yang belum tervalidasi.
+Pilihan v1/v2 adalah preset tampilan studio. Teks Qur'an tetap berasal dari korpus produksi tervalidasi. Font/aset pihak ketiga hanya boleh dibundel setelah hak penggunaan diverifikasi.

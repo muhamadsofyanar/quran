@@ -47,3 +47,15 @@
 Audio Qur'an dapat berupa satu file per surah atau satu file per ayat. Alignment tidak memotong audio secara destruktif: marker ayat disimpan pada state proyek dan metadata aset. Render ayat menggunakan rentang marker tersebut, sedangkan render surah memakai sumber utuh.
 
 `TQ-10` mempertahankan pemisahan komposisi browser dan transkode server. WebM komposisi masuk Redis/BullMQ, worker FFmpeg menghasilkan MP4, lalu output dicatat sebagai aset `render-output` sehingga dapat dipakai sebagai arsip produksi.
+
+## v1.2.0 — content gateway and same-origin media
+
+Alur media browser:
+
+`Browser → app /api/v1/assets/:id/download → authorization workspace → storage.mjs → MinIO/S3 stream → Browser`
+
+Alur konten:
+
+`Studio → media-api content/batch → source registry → QuranEnc catalog/source → per-surah cache → project segments → render/subtitle`
+
+Katalog QuranEnc ditemukan saat runtime, sedangkan tiga sumber Indonesia dipin sebagai preferred fallback. Teks sumber, versi, dan atribusi dibawa sampai layer preview/render.

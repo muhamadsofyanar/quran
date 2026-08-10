@@ -39,3 +39,10 @@
 - Signed/local download tetap memerlukan session + workspace access.
 - Endpoint upload dan render memiliki rate limit per alamat klien.
 - Metadata Qur'an dibatasi pada nomor surah 1–114 dan rentang ayat positif.
+
+## v1.2.0 — media dan konten eksternal
+
+- URL object storage internal tidak diberikan ke browser; aplikasi melakukan stream same-origin setelah pemeriksaan sesi/workspace.
+- Provider key QuranEnc disanitasi dan URL upstream selalu dibangun dari base URL QuranEnc, bukan URL arbitrer dari request pengguna.
+- Konten QuranEnc yang tampil sebagai sumber resmi dikunci read-only untuk mencegah modifikasi yang kemudian tetap diberi atribusi sumber.
+- Upload checksum-identik digunakan kembali sehingga mengurangi duplikasi storage; hard delete tetap diblokir bila aset direferensikan proyek/render.

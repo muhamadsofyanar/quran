@@ -26,14 +26,19 @@ test("production platform ships authentication, immutable audit, storage, and re
   assert.match(auth, /scrypt/);
   assert.match(auth, /HttpOnly; SameSite=Strict/);
   assert.match(storage, /S3Client/);
+  assert.match(storage, /stream: object\.Body/);
+  assert.doesNotMatch(storage, /getSignedUrl/);
   assert.match(platform, /\/api\/v1\/backup/);
   assert.match(platform, /\/api\/v1\/restore/);
   assert.match(migration, /append-only/);
   assert.match(migration, /tq_memberships/);
   const migration2 = await read("../server/migrations/002-media-library.sql");
+  const migration3 = await read("../server/migrations/003-content-and-dedupe.sql");
   assert.match(migration2, /scope/);
   assert.match(migration2, /analysis_status/);
   assert.match(migration2, /cancel_requested/);
+  assert.match(migration3, /indonesian_affairs/);
+  assert.match(migration3, /duplicateOf/);
 });
 
 test("media gateway exposes real transcode and validated corpus paths", async () => {
@@ -56,17 +61,24 @@ test("local transcription service is pinned and OpenAI-compatible", async () => 
 });
 
 
-test("TQ-07 sampai TQ-11 menyediakan pustaka media, retry render, dan indeks 114 surah", async () => {
+test("TQ-07 sampai TQ-12 menyediakan pustaka media, konten QuranEnc, retry render, dan indeks 114 surah", async () => {
   const [platform, queue, server, page] = await Promise.all([read("../server/platform-api.mjs"), read("../server/render-queue.mjs"), read("../server/index.mjs"), read("../app/page.tsx")]);
   assert.match(platform, /request.method === "GET"/);
   assert.match(platform, /inferQuranAudioMetadata/);
   assert.match(platform, /analysis_status/);
+  assert.match(platform, /\/api\/v1\/assets\/deduplicate/);
+  assert.match(platform, /deduplicated/);
   assert.match(platform, /retryMatch/);
   assert.match(queue, /retryRender/);
   assert.match(server, /\/media-api\/quran\/surahs/);
+  assert.match(server, /\/media-api\/quran\/content\/batch/);
   assert.match(page, /Pustaka Media Qur/);
   assert.match(page, /Batch 3 rasio/);
   assert.match(page, /renderScope/);
+  assert.match(page, /quranenc:indonesian_affairs/);
+  assert.match(page, /Tafsir/);
+  assert.match(page, /Rapikan duplikat/);
+  assert.match(page, /readOnly=\{translationSource !== "Teks manual"\}/);
   assert.match(page, /fetch\(\"\/media-api\/capabilities\"/);
   assert.match(page, /fetch\(\"\/api\/v1\/auth\/session\"/);
   assert.match(page, /setSessionMode\(account\.authenticated \? \"authenticated\" : \"guest\"\)/);

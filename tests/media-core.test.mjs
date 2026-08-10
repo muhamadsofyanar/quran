@@ -3,7 +3,7 @@ import test from "node:test";
 import { alignTranscriptSequence, arabicSimilarity, buildAss, buildSrt, buildVtt, matchTranscript, normalizeArabic } from "../lib/media-core.mjs";
 
 const segments = [
-  { start: 0, end: 4.8, arabic: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", translation: "Dengan nama Allah." },
+  { start: 0, end: 4.8, arabic: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", translation: "Dengan nama Allah.", tafsir: "Pembukaan dengan menyebut nama Allah." },
   { start: 4.8, end: 10.7, arabic: "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", translation: "Segala puji bagi Allah." },
 ];
 
@@ -25,6 +25,8 @@ test("ekspor subtitle menghasilkan SRT, VTT, dan ASS valid", () => {
   assert.match(buildVtt(segments), /^WEBVTT/);
   assert.match(buildAss(segments), /\[Events\]/);
   assert.match(buildAss(segments), /Dialogue: 0/);
+  assert.match(buildSrt(segments, "tafsir"), /Pembukaan dengan menyebut nama Allah/);
+  assert.match(buildVtt(segments, "all"), /Dengan nama Allah/);
 });
 
 test("alignment menjaga urutan, mengenali pengulangan, dan membawa timestamp kata", () => {

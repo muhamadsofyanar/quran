@@ -1,58 +1,55 @@
-# Checklist Rilis v1.1.0
+# Checklist Rilis v1.2.0
 
-## 0–40% — Mesin dasar
+## Mesin dasar
 
 - [x] Studio responsif.
 - [x] Upload dan playback audio.
 - [x] Korpus tervalidasi dan checksum.
-- [x] Subtitle SRT/VTT/ASS.
-- [x] WebM dan FFmpeg MP4.
+- [x] Subtitle SRT/VTT/ASS termasuk layer tafsir.
+- [x] FFmpeg MP4 H.264 + AAC.
 
-## 40–65% — Data produksi
+## Data produksi
 
 - [x] Akun, sesi, workspace, peran.
-- [x] PostgreSQL dan migrasi.
+- [x] PostgreSQL dan migration runner 001–003.
 - [x] Autosave dengan conflict protection.
-- [x] Storage lokal/S3.
+- [x] MinIO/S3/local object storage.
+- [x] Media stream same-origin melalui aplikasi.
+- [x] Checksum deduplication + arsip duplikat lama.
 - [x] Backup/restore metadata.
 
-## 65–90% — AI dan antrean
+## Qur'an, AI, terjemahan, tafsir
 
 - [x] Timestamp kata.
-- [x] Alignment berurutan, pengulangan, alternatif.
-- [x] Registri terjemahan/tafsir berlisensi.
-- [x] Redis/BullMQ, retry, progress, worker.
-- [x] Hasil MP4 permanen dan signed download.
+- [x] Alignment berurutan, repeat handling, invalid-ayah guard.
+- [x] 114 surah / 6.236 ayat / 30 juz / 604 halaman / 240 rubu.
+- [x] Kemenag RI default melalui QuranEnc.
+- [x] PT. Sabiq sebagai alternatif Indonesia.
+- [x] Tafsir Al-Mukhtasar Indonesia.
+- [x] Katalog bahasa QuranEnc dinamis.
+- [x] Cache konten per-surah.
+- [x] Atribusi + versi sumber.
+- [x] Teks sumber read-only; mode manual tetap tersedia.
 
-## 90–100% — Rilis
+## Render & hardening
 
+- [x] Redis/BullMQ, progress, retry, cancel, worker.
+- [x] Render per ayat/per surah dan batch 3 rasio.
+- [x] Hasil MP4 permanen kembali ke Pustaka Media.
 - [x] Komentar waktu dan persetujuan.
-- [x] Audit immutable dan security headers.
+- [x] Audit append-only dan security headers.
+- [x] File signature, size guard, dan rate limit upload.
 - [x] Dokumentasi GitHub/Coolify/operasi.
-- [x] Lint, build, test, dan preflight.
-- [x] Paket bersih siap GitHub.
+- [x] Preflight TQ-12.
 
-## Gerbang eksternal setelah paket
+## Validasi setelah satu deploy
 
-- [ ] Diunggah manual ke GitHub.
-- [ ] Dideploy di Coolify.
-- [ ] DNS/TLS aktif.
-- [ ] Benchmark murottal nyata selesai.
-- [ ] Lisensi setiap sumber konten disetujui.
-
-Kotak eksternal tidak mengurangi status 100% pra-deployment; kotak tersebut menentukan kapan layanan produksi boleh diumumkan kepada pengguna umum.
-
-## Tambahan v1.1.0
-
-- [ ] Migration terbaru menunjukkan `002-media-library`.
-- [ ] Pustaka Media menampilkan audio lama setelah refresh/login ulang.
-- [ ] `0001.mp3` dikenali sebagai Surah 1 atau metadata hasil alignment memperbaruinya.
-- [ ] Audio proyek dapat dimuat tanpa upload ulang.
-- [ ] Daftar Pustaka Al-Qur'an memuat 114 surah.
-- [ ] Matcher tidak menghasilkan ayat 0/-1 dan tidak mundur pada mode default.
-- [ ] Render ayat terpilih berhasil.
-- [ ] Render seluruh proyek berhasil.
-- [ ] Batch 16:9, 9:16, 1:1 masuk antrean.
-- [ ] Retry job gagal dan pembatalan job diuji.
-- [ ] Output MP4 muncul di Pustaka Media.
-- [ ] Backup manifest mencakup metadata media dan render.
+- [ ] Migration terbaru menunjukkan `003-content-and-dedupe`.
+- [ ] Pustaka Media hanya menampilkan satu salinan aktif `0001.mp3` setelah dedupe.
+- [ ] `0001.mp3` dapat diputar/digunakan dari Pustaka tanpa upload ulang.
+- [ ] Al-Fatihah terpetakan 1→7 tanpa 0/-1.
+- [ ] Terjemahan Kemenag otomatis muncul untuk semua potongan.
+- [ ] Tafsir Al-Mukhtasar dapat diaktifkan sebagai layer terpisah.
+- [ ] Render 1080p berhasil dan MP4 masuk Pustaka Media.
+- [ ] Batch 16:9/9:16/1:1 diuji bila kapasitas VPS cukup.
+- [ ] Backup PostgreSQL dan object storage dijadwalkan.

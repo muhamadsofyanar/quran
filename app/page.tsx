@@ -1,6 +1,6 @@
 "use client";
 
-// @phase TQ-03/TQ-06/TQ-07/TQ-09/TQ-10/TQ-11 — independent production studio with persistent media, review, and rendering.
+// @phase TQ-03/TQ-06/TQ-07/TQ-09/TQ-10/TQ-11/TQ-12 — independent production studio with persistent media, multilingual content, review, and rendering.
 
 import {
   ChangeEvent,
@@ -39,6 +39,9 @@ type Segment = {
   end: number;
   arabic: string;
   translation: string;
+  tafsir?: string;
+  translationSourceEdition?: string;
+  tafsirSourceEdition?: string;
   confidence: number;
   verified: boolean;
 };
@@ -93,7 +96,23 @@ type SessionInfo = {
 type TranscriptPart = { text: string; start?: number; end?: number; avg_logprob?: number; words?: { word?: string; start?: number; end?: number; probability?: number }[] };
 type AlignedPart = { matched: boolean; confidence: number; repeated?: boolean; start?: number | null; end?: number | null; ayah?: { surah: string; surahNumber: number; ayah: number; arabic: string; score: number } };
 type ReviewComment = { id: string; at_seconds: number; body: string; display_name: string; resolved_at?: string | null; created_at: string };
-type ContentSource = { edition: string; kind: string; language: string; name: string; author?: string; licenseName: string; enabled: boolean; redistributionAllowed: boolean };
+type ContentSource = {
+  edition: string;
+  provider?: string;
+  providerKey?: string;
+  kind: "translation" | "tafsir" | string;
+  language: string;
+  name: string;
+  author?: string;
+  version?: string;
+  attribution?: string;
+  licenseName: string;
+  licenseUrl?: string;
+  enabled: boolean;
+  redistributionAllowed: boolean;
+  preferred?: boolean;
+  onDemand?: boolean;
+};
 type WorkspaceMember = { id: string; email: string; display_name: string; role: "owner" | "editor" | "reviewer" | "viewer" };
 
 type MediaAsset = {
@@ -352,11 +371,14 @@ export default function Home() {
   const [activeProjectId, setActiveProjectId] = useState(initialProjects[0].id);
   const [selectedSegmentId, setSelectedSegmentId] = useState(sampleSegments[0].id);
   const [mushafVersion, setMushafVersion] = useState<"v1" | "v2">("v2");
-  const [translationSource, setTranslationSource] = useState("Teks manual");
+  const [translationSource, setTranslationSource] = useState("quranenc:indonesian_affairs");
+  const [tafsirSource, setTafsirSource] = useState("quranenc:indonesian_mokhtasar");
   const [ratio, setRatio] = useState<Ratio>("16:9");
   const [resolution, setResolution] = useState("1080p");
   const [fontScale, setFontScale] = useState(100);
   const [showTranslation, setShowTranslation] = useState(true);
+  const [showTafsir, setShowTafsir] = useState(false);
+  const [contentBusy, setContentBusy] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioFile, setAudioFile] = useState<File>();
   const [audioName, setAudioName] = useState<string>();
@@ -416,6 +438,7 @@ export default function Home() {
   const mediaUploadRef = useRef<HTMLInputElement>(null);
   const hydrated = useRef(false);
   const serverSnapshots = useRef(new Map<string, string>());
+  const contentHydrationRef = useRef(new Set<string>());
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? projects[0],
     [activeProjectId, projects],
@@ -444,6 +467,22 @@ export default function Home() {
   const visibleContentSources = useMemo(
     () => showEnabledSourcesOnly ? contentSources.filter((source) => source.enabled && source.redistributionAllowed) : contentSources,
     [contentSources, showEnabledSourcesOnly],
+  );
+  const translationSources = useMemo(
+    () => contentSources.filter((source) => source.kind === "translation" && source.enabled && source.redistributionAllowed),
+    [contentSources],
+  );
+  const tafsirSources = useMemo(
+    () => contentSources.filter((source) => source.kind === "tafsir" && source.enabled && source.redistributionAllowed),
+    [contentSources],
+  );
+  const selectedTranslationInfo = useMemo(
+    () => contentSources.find((source) => source.edition === translationSource),
+    [contentSources, translationSource],
+  );
+  const selectedTafsirInfo = useMemo(
+    () => contentSources.find((source) => source.edition === tafsirSource),
+    [contentSources, tafsirSource],
   );
   const filteredMediaAssets = useMemo(() => {
     const query = mediaQuery.trim().toLowerCase();
@@ -541,6 +580,22 @@ export default function Home() {
     }
     if (asset.kind === "render-output") {
       window.open(asset.downloadUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  async function deduplicateMediaAssets() {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    try {
+      const response = await fetch("/api/v1/assets/deduplicate", {
+        method: "POST",
+        headers: { "x-tq-workspace": session.workspaces[0].id },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Duplikat media gagal dirapikan.");
+      await refreshMediaLibrary();
+      setToast(payload.archived ? `${payload.archived} media duplikat diarsipkan; file utama tetap aman.` : "Tidak ada media duplikat yang perlu dirapikan.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Duplikat media gagal dirapikan.");
     }
   }
 
@@ -817,6 +872,49 @@ export default function Home() {
     if (activeProject.backgroundAssetId === loadedBackgroundAssetId) return;
     void loadBackgroundAsset(activeProject.backgroundAssetId, true);
   }, [activeProject?.backgroundAssetId, activeProject?.id, loadedBackgroundAssetId, mediaAssets, sessionMode]);
+
+  useEffect(() => {
+    if (!selectedSegment || !showTranslation || translationSource === "Teks manual") return;
+    if (selectedSegment.translation) return;
+    void fetchContentForSegment(translationSource, selectedSegment, "translation", true);
+  }, [selectedSegmentId, translationSource, showTranslation]);
+
+  useEffect(() => {
+    if (!selectedSegment || !showTafsir || tafsirSource === "Teks manual") return;
+    if (selectedSegment.tafsir) return;
+    void fetchContentForSegment(tafsirSource, selectedSegment, "tafsir", true);
+  }, [selectedSegmentId, tafsirSource, showTafsir]);
+
+  useEffect(() => {
+    if (!activeProject?.segments?.length) return;
+    const needsTranslation = showTranslation && translationSource !== "Teks manual" && activeProject.segments.some((segment) => !segment.translation);
+    const needsTafsir = showTafsir && tafsirSource !== "Teks manual" && activeProject.segments.some((segment) => !segment.tafsir);
+    if (!needsTranslation && !needsTafsir) return;
+
+    const references = activeProject.segments.map((segment) => `${segment.surahNumber}:${segment.ayah}`).join(",");
+    const key = `${activeProject.id}|${translationSource}|${showTafsir ? tafsirSource : "tafsir-off"}|${references}`;
+    if (contentHydrationRef.current.has(key)) return;
+    contentHydrationRef.current.add(key);
+
+    let cancelled = false;
+    void (async () => {
+      let hydrated = activeProject.segments;
+      if (needsTranslation) hydrated = await hydrateSegmentsContent(hydrated, translationSource, "translation", true);
+      if (needsTafsir) hydrated = await hydrateSegmentsContent(hydrated, tafsirSource, "tafsir", true);
+      if (cancelled) return;
+
+      const changed = hydrated.some((segment, index) =>
+        segment.translation !== activeProject.segments[index]?.translation ||
+        segment.translationSourceEdition !== activeProject.segments[index]?.translationSourceEdition ||
+        segment.tafsir !== activeProject.segments[index]?.tafsir ||
+        segment.tafsirSourceEdition !== activeProject.segments[index]?.tafsirSourceEdition,
+      );
+      if (!changed) return;
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, segments: hydrated, updatedAt: new Date().toISOString() } : project));
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeProject?.id, activeProject?.segments, showTranslation, translationSource, showTafsir, tafsirSource]);
 
   useEffect(() => {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !capabilities.queue?.healthy) return;
@@ -1164,17 +1262,81 @@ export default function Home() {
     );
   }
 
-  async function selectTranslationSource(source: string) {
-    setTranslationSource(source);
-    if (!selectedSegment || source === "Teks manual") return;
+  function applySegmentContent(segmentId: string, patch: Partial<Segment>) {
+    setProjects((items) => items.map((project) => project.id === activeProject.id ? {
+      ...project,
+      updatedAt: new Date().toISOString(),
+      segments: project.segments.map((segment) => segment.id === segmentId ? { ...segment, ...patch } : segment),
+    } : project));
+  }
+
+  async function fetchContentForSegment(edition: string, segment: Segment, field: "translation" | "tafsir", quiet = false) {
+    if (!edition || edition === "Teks manual") return;
     try {
-      const response = await fetch(`/media-api/quran/content?edition=${encodeURIComponent(source)}&surah=${selectedSegment.surahNumber}&ayah=${selectedSegment.ayah}`);
+      const response = await fetch(`/media-api/quran/content?edition=${encodeURIComponent(edition)}&surah=${segment.surahNumber}&ayah=${segment.ayah}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Sumber belum tersedia.");
-      updateSegment({ translation: payload.entry.text || "" });
-      setToast("Terjemahan berlisensi dimuat dari sumber terverifikasi.");
+      applySegmentContent(segment.id, field === "translation"
+        ? { translation: payload.entry.text || "", translationSourceEdition: edition }
+        : { tafsir: payload.entry.text || "", tafsirSourceEdition: edition });
+      if (!quiet) setToast(`${field === "translation" ? "Terjemahan" : "Tafsir"} dimuat dari sumber terverifikasi.`);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Sumber belum tersedia.");
+      if (!quiet) setToast(error instanceof Error ? error.message : "Sumber belum tersedia.");
+    }
+  }
+
+  async function hydrateSegmentsContent(segments: Segment[], edition: string, field: "translation" | "tafsir", preserveExisting = false, strict = false) {
+    if (!edition || edition === "Teks manual" || !segments.length) return segments;
+    try {
+      const response = await fetch("/media-api/quran/content/batch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ edition, refs: segments.map((segment) => ({ surahNumber: segment.surahNumber, ayah: segment.ayah })) }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Sumber konten belum tersedia.");
+      const map = new Map<string, string>((payload.entries || []).map((entry: { surahNumber: number; ayah: number; text?: string }) => [`${entry.surahNumber}:${entry.ayah}`, String(entry.text || "")] as [string, string]));
+      return segments.map((segment) => {
+        if (preserveExisting && (field === "translation" ? Boolean(segment.translation) : Boolean(segment.tafsir))) return segment;
+        const text = map.get(`${segment.surahNumber}:${segment.ayah}`);
+        if (text === undefined) return segment;
+        return field === "translation"
+          ? { ...segment, translation: text, translationSourceEdition: edition }
+          : { ...segment, tafsir: text, tafsirSourceEdition: edition };
+      });
+    } catch (error) {
+      if (strict) throw error;
+      return segments;
+    }
+  }
+
+  async function selectTranslationSource(source: string) {
+    setTranslationSource(source);
+    if (!activeProject || source === "Teks manual") return;
+    setContentBusy(true);
+    try {
+      const hydrated = await hydrateSegmentsContent(activeProject.segments, source, "translation", false, true);
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, segments: hydrated, updatedAt: new Date().toISOString() } : project));
+      setToast("Sumber terjemahan diterapkan ke seluruh potongan proyek.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Sumber terjemahan belum dapat dimuat.");
+    } finally {
+      setContentBusy(false);
+    }
+  }
+
+  async function selectTafsirSource(source: string) {
+    setTafsirSource(source);
+    if (!activeProject || source === "Teks manual") return;
+    setContentBusy(true);
+    try {
+      const hydrated = await hydrateSegmentsContent(activeProject.segments, source, "tafsir", false, true);
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, segments: hydrated, updatedAt: new Date().toISOString() } : project));
+      setToast("Sumber tafsir diterapkan ke seluruh potongan proyek.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Sumber tafsir belum dapat dimuat.");
+    } finally {
+      setContentBusy(false);
     }
   }
 
@@ -1285,20 +1447,27 @@ export default function Home() {
         return items;
       }, []);
       if (!nextSegments.length) throw new Error("Belum ditemukan kecocokan ayat yang memadai.");
+      let enrichedSegments = nextSegments;
+      if (showTranslation && translationSource !== "Teks manual") {
+        enrichedSegments = await hydrateSegmentsContent(enrichedSegments, translationSource, "translation");
+      }
+      if (showTafsir && tafsirSource !== "Teks manual") {
+        enrichedSegments = await hydrateSegmentsContent(enrichedSegments, tafsirSource, "tafsir");
+      }
       setProjects((items) => items.map((project) => project.id === activeProject.id ? {
         ...project,
-        segments: nextSegments,
+        segments: enrichedSegments,
         duration,
         progress: Math.max(project.progress, 58),
         status: "review",
         updatedAt: new Date().toISOString(),
       } : project));
-      setSelectedSegmentId(nextSegments[0].id);
+      setSelectedSegmentId(enrichedSegments[0].id);
       setStudioStep("sync");
       if (activeProject.audioAssetId && sessionMode === "authenticated") {
-        const surahs = [...new Set(nextSegments.map((segment) => segment.surahNumber))];
+        const surahs = [...new Set(enrichedSegments.map((segment) => segment.surahNumber))];
         const sameSurah = surahs.length === 1;
-        const ayahs = nextSegments.map((segment) => segment.ayah);
+        const ayahs = enrichedSegments.map((segment) => segment.ayah);
         const minAyah = Math.min(...ayahs);
         const maxAyah = Math.max(...ayahs);
         const needsReview = nextSegments.some((segment) => segment.confidence < 70);
@@ -1309,10 +1478,10 @@ export default function Home() {
           ayahEnd: sameSurah ? maxAyah : null,
           durationSeconds: duration,
           analysisStatus: needsReview ? "needs-review" : "analyzed",
-          metadata: { surahName: sameSurah ? nextSegments[0].surah : null, transcript: fullText, alignment: nextSegments.map((segment) => ({ surahNumber: segment.surahNumber, ayah: segment.ayah, start: segment.start, end: segment.end, confidence: segment.confidence })) },
+          metadata: { surahName: sameSurah ? enrichedSegments[0].surah : null, transcript: fullText, alignment: enrichedSegments.map((segment) => ({ surahNumber: segment.surahNumber, ayah: segment.ayah, start: segment.start, end: segment.end, confidence: segment.confidence })), translationSource, tafsirSource: showTafsir ? tafsirSource : null },
         }, true).catch(() => {});
       }
-      setToast(`${nextSegments.length} potongan ayat ditemukan. Periksa teks dan waktunya sebelum ekspor.`);
+      setToast(`${enrichedSegments.length} potongan ayat ditemukan${showTranslation && translationSource !== "Teks manual" ? " beserta terjemahan" : ""}. Periksa teks dan waktunya sebelum ekspor.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Transkripsi tidak dapat diselesaikan.");
     } finally {
@@ -1340,7 +1509,7 @@ export default function Home() {
     setSelectedSegmentId(segment.id);
   }
 
-  function exportSubtitle(format: "srt" | "vtt" | "ass", mode: "arabic" | "translation" | "both" = "both") {
+  function exportSubtitle(format: "srt" | "vtt" | "ass", mode: "arabic" | "translation" | "tafsir" | "both" | "all" = "both") {
     const content = format === "srt" ? buildSrt(activeProject.segments, mode) : format === "vtt" ? buildVtt(activeProject.segments, mode) : buildAss(activeProject.segments, mode, ratio);
     const mime = format === "vtt" ? "text/vtt;charset=utf-8" : "text/plain;charset=utf-8";
     downloadBlob(new Blob([`\uFEFF${content}`], { type: mime }), `${safeFilename(activeProject.title)}-${mode}.${format}`);
@@ -1449,12 +1618,25 @@ export default function Home() {
         context.font = `600 ${arabicSize}px "Amiri", "Noto Naskh Arabic", serif`;
         drawWrappedText(context, segment.arabic, width / 2, height * 0.47, width * 0.82, arabicSize * 1.7);
         if (showTranslation && segment.translation) {
-          context.direction = "ltr"; context.fillStyle = "rgba(255,255,255,.88)"; const translationSize = Math.round(width * (outputRatio === "9:16" ? 0.028 : 0.018));
+          context.direction = "ltr"; context.fillStyle = "rgba(255,255,255,.9)"; const translationSize = Math.round(width * (outputRatio === "9:16" ? 0.027 : 0.018));
           context.font = `400 ${translationSize}px Arial, sans-serif`;
-          drawWrappedText(context, segment.translation, width / 2, height * 0.67, width * 0.76, translationSize * 1.45);
+          drawWrappedText(context, segment.translation, width / 2, height * (showTafsir && segment.tafsir ? 0.63 : 0.67), width * 0.78, translationSize * 1.42);
+        }
+        if (showTafsir && segment.tafsir) {
+          context.direction = "ltr"; context.fillStyle = "rgba(224,232,228,.78)"; const tafsirSize = Math.round(width * (outputRatio === "9:16" ? 0.021 : 0.014));
+          context.font = `400 ${tafsirSize}px Arial, sans-serif`;
+          drawWrappedText(context, segment.tafsir, width / 2, height * 0.76, width * 0.8, tafsirSize * 1.38);
         }
         context.globalAlpha = 1;
-        context.direction = "ltr"; context.textAlign = "left"; context.fillStyle = "#dbb56e"; context.font = `600 ${Math.round(width * 0.012)}px Arial`;
+        context.direction = "ltr";
+        const creditParts = [];
+        if (showTranslation && selectedTranslationInfo?.attribution) creditParts.push(`${selectedTranslationInfo.attribution}${selectedTranslationInfo.version ? ` v${selectedTranslationInfo.version}` : ""}`);
+        if (showTafsir && selectedTafsirInfo?.attribution) creditParts.push(`${selectedTafsirInfo.attribution}${selectedTafsirInfo.version ? ` v${selectedTafsirInfo.version}` : ""}`);
+        if (creditParts.length) {
+          context.textAlign = "center"; context.fillStyle = "rgba(220,230,225,.52)"; context.font = `400 ${Math.max(9, Math.round(width * 0.0075))}px Arial`;
+          context.fillText(creditParts.join(" • ").slice(0, 180), width * 0.5, height * 0.875);
+        }
+        context.textAlign = "left"; context.fillStyle = "#dbb56e"; context.font = `600 ${Math.round(width * 0.012)}px Arial`;
         if (watermarkText.trim()) context.fillText(watermarkText.trim().slice(0, 80), width * 0.055, height * 0.92);
         context.textAlign = "right"; context.fillText(`QS ${segment.surahNumber}:${segment.ayah}`, width * 0.945, height * 0.92);
         const progress = Math.min(82, 12 + Math.round(((absoluteTime - captureStart) / duration) * 70));
@@ -1542,7 +1724,7 @@ export default function Home() {
       schemaVersion: "0.1",
       exportedAt: new Date().toISOString(),
       project: activeProject,
-      preferences: { mushafVersion, translationSource, ratio, resolution, fontScale, showTranslation },
+      preferences: { mushafVersion, translationSource, tafsirSource, ratio, resolution, fontScale, showTranslation, showTafsir },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1718,7 +1900,7 @@ export default function Home() {
             <span>Taysriul Qur&apos;ani</span><Icon name="chevron" size={14} /><strong>{navItems.find((item) => item.id === view)?.label ?? "Pengaturan"}</strong>
           </div>
           <div className="topbar-actions">
-            <span className="stage-pill"><span /> Production v1.0</span>
+            <span className="stage-pill"><span /> Production v1.2</span>
             <button className="icon-button" aria-label="Cari proyek" onClick={() => navigate("projects")}><Icon name="search" /></button>
             <button className="primary-button compact-button" onClick={() => setIsNewProjectOpen(true)}><Icon name="plus" /> Proyek baru</button>
           </div>
@@ -1841,6 +2023,7 @@ export default function Home() {
             <div className="media-scope-filters">
               <span>Cakupan audio:</span>
               {(["all", "surah", "ayah", "generic"] as const).map((scope) => <button key={scope} className={mediaScope === scope ? "active" : ""} onClick={() => setMediaScope(scope)}>{scope === "all" ? "Semua" : scope === "surah" ? "Per surah" : scope === "ayah" ? "Per ayat" : "Umum"}</button>)}
+              <button className="media-refresh" onClick={() => void deduplicateMediaAssets()}><Icon name="layers" size={14}/> Rapikan duplikat</button>
               <button className="media-refresh" onClick={() => void refreshMediaLibrary()}><Icon name="clock" size={14}/> Muat ulang</button>
             </div>
             {filteredMediaAssets.length === 0 ? <div className="empty-state media-empty"><span><Icon name="audio" size={28}/></span><h2>Belum ada media sesuai filter</h2><p>Unggah audio Qur'an. Nama <strong>0001.mp3</strong> otomatis dikenali sebagai Surah 1 penuh, sedangkan <strong>001001.mp3</strong> sebagai QS 1:1.</p><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Unggah media</button></div> : <div className="media-grid">
@@ -1932,8 +2115,10 @@ export default function Home() {
                       >
                         {selectedSegment.arabic}<span className="ayah-marker">{selectedSegment.ayah}</span>
                       </p>
-                      {showTranslation && <><span className="translation-rule"/><small>{selectedSegment.translation}</small></>}
+                      {showTranslation && <><span className="translation-rule"/><small>{selectedSegment.translation || (contentBusy ? "Memuat terjemahan…" : "")}</small></>}
+                      {showTafsir && selectedSegment.tafsir && <small className="canvas-tafsir">{selectedSegment.tafsir}</small>}
                     </div>
+                    {(selectedTranslationInfo?.attribution || selectedTafsirInfo?.attribution) && <span className="canvas-source-credit">{[showTranslation ? selectedTranslationInfo?.attribution : "", showTafsir ? selectedTafsirInfo?.attribution : ""].filter(Boolean).join(" • ")}</span>}
                     <div className="canvas-footer"><span>{watermarkText}</span><em>{selectedSegment.surahNumber}:{selectedSegment.ayah}</em></div>
                     <div className="canvas-decoration bottom" />
                   </div>
@@ -1961,8 +2146,17 @@ export default function Home() {
                 </div>
                 <div className="inspector-section">
                   <div className="section-label"><span>Terjemahan</span><label className="switch"><input type="checkbox" checked={showTranslation} onChange={(event) => setShowTranslation(event.target.checked)}/><i/></label></div>
-                  <label><span>Sumber</span><select value={translationSource} onChange={(event) => selectTranslationSource(event.target.value)}><option>Teks manual</option>{contentSources.filter((source) => source.enabled && source.redistributionAllowed).map((source) => <option key={source.edition} value={source.edition}>{source.name}</option>)}</select></label>
-                  <label><span>Teks terjemahan</span><textarea value={selectedSegment.translation} onChange={(event) => updateSegment({ translation: event.target.value })}/></label>
+                  <label><span>Sumber</span><select value={translationSource} onChange={(event) => void selectTranslationSource(event.target.value)} disabled={contentBusy}><option>Teks manual</option>{translationSources.map((source) => <option key={source.edition} value={source.edition}>{source.language.toUpperCase()} · {source.name}</option>)}</select></label>
+                  {selectedTranslationInfo?.attribution && <small className="source-attribution">{selectedTranslationInfo.attribution}{selectedTranslationInfo.version ? ` · v${selectedTranslationInfo.version}` : ""}</small>}
+                  <label><span>Teks terjemahan</span><textarea value={selectedSegment.translation} readOnly={translationSource !== "Teks manual"} onChange={(event) => updateSegment({ translation: event.target.value, translationSourceEdition: "manual" })}/></label>
+                  {translationSource !== "Teks manual" && <small className="source-attribution">Teks sumber dikunci agar tidak berubah. Pilih Teks manual untuk menyunting.</small>}
+                </div>
+                <div className="inspector-section">
+                  <div className="section-label"><span>Tafsir</span><label className="switch"><input type="checkbox" checked={showTafsir} onChange={(event) => setShowTafsir(event.target.checked)}/><i/></label></div>
+                  <label><span>Sumber</span><select value={tafsirSource} onChange={(event) => void selectTafsirSource(event.target.value)} disabled={contentBusy}><option>Teks manual</option>{tafsirSources.map((source) => <option key={source.edition} value={source.edition}>{source.language.toUpperCase()} · {source.name}</option>)}</select></label>
+                  {selectedTafsirInfo?.attribution && <small className="source-attribution">{selectedTafsirInfo.attribution}{selectedTafsirInfo.version ? ` · v${selectedTafsirInfo.version}` : ""}</small>}
+                  <label><span>Teks tafsir</span><textarea value={selectedSegment.tafsir || ""} readOnly={tafsirSource !== "Teks manual"} onChange={(event) => updateSegment({ tafsir: event.target.value, tafsirSourceEdition: "manual" })}/></label>
+                  {tafsirSource !== "Teks manual" && <small className="source-attribution">Teks sumber dikunci agar tidak berubah. Pilih Teks manual untuk menyunting.</small>}
                 </div>
                 <div className="inspector-section">
                   <div className="section-label"><span>Desain video</span><Icon name="studio" size={15}/></div>
@@ -1991,7 +2185,7 @@ export default function Home() {
 
             {studioStep === "render" && (
               <div className="render-drawer">
-                <div><span className="section-kicker">Langkah terakhir</span><h2>Ekspor subtitle & video nyata</h2><p>Subtitle dibuat langsung. Video dirender oleh browser lalu dikonversi FFmpeg menjadi MP4 ketika container Coolify aktif.</p><div className="subtitle-actions"><button onClick={() => exportSubtitle("srt")}><Icon name="download" size={15}/> SRT</button><button onClick={() => exportSubtitle("vtt")}><Icon name="download" size={15}/> VTT</button><button onClick={() => exportSubtitle("ass")}><Icon name="download" size={15}/> ASS</button><button onClick={() => exportSubtitle("srt", "arabic")}><Icon name="book" size={15}/> Arab saja</button><button onClick={() => exportSubtitle("srt", "translation")}><Icon name="globe" size={15}/> Terjemahan</button></div></div>
+                <div><span className="section-kicker">Langkah terakhir</span><h2>Ekspor subtitle & video nyata</h2><p>Subtitle dibuat langsung. Video dirender oleh browser lalu dikonversi FFmpeg menjadi MP4 ketika container Coolify aktif.</p><div className="subtitle-actions"><button onClick={() => exportSubtitle("srt")}><Icon name="download" size={15}/> SRT</button><button onClick={() => exportSubtitle("vtt")}><Icon name="download" size={15}/> VTT</button><button onClick={() => exportSubtitle("ass")}><Icon name="download" size={15}/> ASS</button><button onClick={() => exportSubtitle("srt", "arabic")}><Icon name="book" size={15}/> Arab saja</button><button onClick={() => exportSubtitle("srt", "translation")}><Icon name="globe" size={15}/> Terjemahan</button><button onClick={() => exportSubtitle("srt", "tafsir")}><Icon name="book" size={15}/> Tafsir</button><button onClick={() => exportSubtitle("srt", "all")}><Icon name="layers" size={15}/> Semua layer</button></div></div>
                 <label><span>Cakupan</span><select value={renderScope} onChange={(event) => setRenderScope(event.target.value as "surah" | "ayah")}><option value="surah">Seluruh surah/proyek</option><option value="ayah">Ayat terpilih saja</option></select></label>
                 <label><span>Resolusi</span><select value={resolution} onChange={(event) => setResolution(event.target.value)}><option>1080p</option><option>1440p</option><option>2160p (4K)</option></select></label>
                 <label><span>Format hasil</span><select value={capabilities.ffmpeg ? "MP4" : "WebM"} disabled><option value={capabilities.ffmpeg ? "MP4" : "WebM"}>{capabilities.ffmpeg ? "MP4 · H.264 + AAC" : "WebM · browser"}</option></select></label>
@@ -2032,8 +2226,9 @@ export default function Home() {
                 {quranPreview && <div className="quran-preview-card"><span className="panel-kicker">Surah terpilih</span><h2>{quranPreview.nameLatin || `Surah ${quranPreview.number || ""}`}</h2><p dir="rtl">{quranPreview.ayahs?.[0]?.arabic || quranPreview.nameArabic || "Data surah berhasil dimuat dari korpus produksi."}</p><small>{quranPreview.ayahs?.length || quranPreview.ayahCount || 0} ayat termuat</small></div>}
                 <span className="panel-kicker">Registri sumber</span><h2>Paket data & lisensi</h2>
                 <div className="source-package"><span className="priority"><Icon name="shield" size={16}/></span><div><strong>Teks Utsmani</strong><small>6.236 ayat • checksum SHA-256</small></div></div>
-                {visibleContentSources.map((source) => <div className="source-package" key={source.edition}><span className={source.enabled && source.redistributionAllowed ? "priority" : "planned"}><Icon name={source.enabled && source.redistributionAllowed ? "check" : "clock"} size={16}/></span><div><strong>{source.name}</strong><small>{source.language.toUpperCase()} • {source.licenseName === "verification-required" ? "izin distribusi belum diverifikasi" : source.licenseName}</small></div></div>)}
-                <div className="integrity-note"><Icon name="shield"/><p><strong>Aturan sistem:</strong> teks Qur&apos;an tidak boleh diubah tanpa jejak revisi. Terjemahan dan tafsir tidak dapat disinkronkan sebelum lisensi distribusinya dicatat.</p></div>
+                {visibleContentSources.slice(0, 12).map((source) => <div className="source-package" key={source.edition}><span className={source.enabled && source.redistributionAllowed ? "priority" : "planned"}><Icon name={source.enabled && source.redistributionAllowed ? "check" : "clock"} size={16}/></span><div><strong>{source.name}</strong><small>{source.language.toUpperCase()} • {source.onDemand ? "on-demand" : "cache lokal"} • {source.version || source.licenseName}</small></div></div>)}
+                {visibleContentSources.length > 12 && <div className="integrity-note"><Icon name="globe"/><p><strong>Katalog global:</strong> {visibleContentSources.length} sumber ditemukan. Seluruh sumber aktif tetap tersedia dari pilihan Terjemahan/Tafsir di Studio.</p></div>}
+                <div className="integrity-note"><Icon name="shield"/><p><strong>Integritas konten:</strong> teks Qur&apos;an dikunci; terjemahan dan tafsir QuranEnc dipakai tanpa modifikasi dengan atribusi sumber dan versi yang dipertahankan.</p></div>
               </aside>
             </div>
           </div>
@@ -2061,7 +2256,7 @@ export default function Home() {
 
               <section className="settings-content panel">
                 {settingsTab === "identity" && <>
-                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.1.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
+                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.2.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
                   {sessionMode === "authenticated" && <div className="settings-section"><span className="section-kicker">Kolaborasi</span><h2>Anggota workspace</h2><p>Editor mengubah proyek, pemeriksa memberi komentar dan persetujuan, sedangkan viewer hanya membaca.</p><div className="member-list">{members.map((member) => <div key={member.id}><span>{member.display_name?.slice(0,2).toUpperCase() || "U"}</span><div><strong>{member.display_name}</strong><small>{member.email}</small></div><em>{member.role}</em></div>)}</div>{session.workspaces?.[0]?.role === "owner" && <form className="member-form" onSubmit={addWorkspaceMember}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="Email pengguna yang sudah terdaftar"/><select value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "reviewer" | "viewer")}><option value="editor">Editor</option><option value="reviewer">Pemeriksa</option><option value="viewer">Viewer</option></select><button className="primary-button"><Icon name="plus"/> Tambahkan</button></form>}</div>}
                 </>}
 

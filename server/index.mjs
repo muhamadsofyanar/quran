@@ -16,6 +16,7 @@ import {
   alignAgainstCorpus,
   contentStatus,
   corpusStatus,
+  getContentEntries,
   getContentEntry,
   getSurah,
   listContentSources,
@@ -669,7 +670,7 @@ async function handleMediaApi(
           "taysriul-qurani",
 
         version:
-          "1.1.0",
+          "1.2.0",
 
         ffmpeg:
           ffmpegAvailable,
@@ -733,7 +734,7 @@ async function handleMediaApi(
           database.healthy,
 
         version:
-          "1.1.0",
+          "1.2.0",
       }
     );
   }
@@ -921,15 +922,14 @@ async function handleMediaApi(
       "/media-api/quran/content/sources" &&
     request.method === "GET"
   ) {
+    const language = url.searchParams.get("language") || "";
+    const kind = url.searchParams.get("kind") || "";
     return sendJson(
       response,
       200,
       {
-        sources:
-          await listContentSources(),
-
-        status:
-          await contentStatus(),
+        sources: await listContentSources({ language, kind, discover: true }),
+        status: await contentStatus(),
       }
     );
   }
@@ -940,46 +940,34 @@ async function handleMediaApi(
     request.method === "GET"
   ) {
     try {
-      const entry =
-        await getContentEntry(
-          url.searchParams.get(
-            "edition"
-          ),
-
-          url.searchParams.get(
-            "surah"
-          ),
-
-          url.searchParams.get(
-            "ayah"
-          )
-        );
-
-      return entry
-        ? sendJson(
-            response,
-            200,
-            {
-              entry,
-            }
-          )
-        : sendJson(
-            response,
-            404,
-            {
-              error:
-                "Terjemahan/tafsir tidak ditemukan.",
-            }
-          );
-    } catch {
-      return sendJson(
-        response,
-        404,
-        {
-          error:
-            "Edisi belum tersedia pada penyimpanan aplikasi.",
-        }
+      const entry = await getContentEntry(
+        url.searchParams.get("edition"),
+        url.searchParams.get("surah"),
+        url.searchParams.get("ayah"),
       );
+      return entry
+        ? sendJson(response, 200, { entry })
+        : sendJson(response, 404, { error: "Terjemahan/tafsir tidak ditemukan." });
+    } catch (error) {
+      return sendJson(response, error?.statusCode || 503, {
+        error: error?.message || "Sumber terjemahan/tafsir sementara tidak dapat diakses.",
+      });
+    }
+  }
+
+  if (
+    url.pathname ===
+      "/media-api/quran/content/batch" &&
+    request.method === "POST"
+  ) {
+    try {
+      const payload = JSON.parse((await readBody(request, 500_000)).toString("utf8") || "{}");
+      const result = await getContentEntries(payload.edition, payload.refs);
+      return sendJson(response, 200, result);
+    } catch (error) {
+      return sendJson(response, error instanceof SyntaxError ? 400 : error?.statusCode || 503, {
+        error: error?.message || "Terjemahan/tafsir tidak dapat dimuat.",
+      });
     }
   }
 

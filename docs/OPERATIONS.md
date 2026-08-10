@@ -62,3 +62,11 @@ Owner dapat membaca `GET /api/v1/system/status` untuk jumlah proyek, media, tota
 ### Migration
 
 Startup menjalankan semua file `server/migrations/*.sql` secara berurutan. Database lama yang sudah memiliki `001-production` hanya menjalankan `002-media-library` satu kali.
+
+## Operasi v1.2.0 — TQ-12
+
+- Media browser harus diambil melalui `/api/v1/assets/:id/download`; jangan expose port MinIO ke internet hanya untuk playback.
+- Migration `003-content-and-dedupe` otomatis mengarsipkan upload checksum-identik. Gunakan **Rapikan duplikat** bila operator ingin menjalankan dedupe lagi secara manual.
+- QuranEnc diambil on-demand per surah. Gangguan upstream tidak merusak korpus Arab atau media; konten yang sudah dicache tetap dapat digunakan selama cache valid.
+- Default cache konten 7 hari dan discovery katalog 6 jam. Perubahan katalog tidak memerlukan redeploy.
+- Setelah source translation/tafsir otomatis dipilih, textarea dibuat read-only. Untuk koreksi editorial lokal gunakan `Teks manual`, bukan mengubah teks sumber.

@@ -1,9 +1,9 @@
 {
   "project": "Taysriul Qur'ani",
-  "current_phase": "TQ-11",
-  "version": "1.1.0",
+  "current_phase": "TQ-12",
+  "version": "1.2.0",
   "updated_at": "2026-08-10",
-  "scope": "production update with persistent media library, alignment guardrails, professional studio controls, batch rendering, and hardening",
+  "scope": "single-deploy production bundle with persistent media, sequence-safe alignment, professional studio, batch rendering, same-origin MinIO streaming, automatic deduplication, and on-demand multilingual translation/tafsir",
   "progress_percent": 100,
   "separation_rule": "Repository, accounts, database, media, domain, deployment, and roadmap are independent from Sullamul Hifz.",
   "phases": {
@@ -17,12 +17,14 @@
     "TQ-08": { "name": "Qur'an Alignment Engine v2", "status": "completed", "percent": 78, "files": ["lib/media-core.mjs", "server/quran-store.mjs", "tests/media-core.test.mjs"] },
     "TQ-09": { "name": "Studio Qur'an Profesional", "status": "completed", "percent": 87, "files": ["app/page.tsx", "app/globals.css"] },
     "TQ-10": { "name": "Render dan Produksi Massal", "status": "completed", "percent": 95, "files": ["app/page.tsx", "server/render-queue.mjs", "server/render-worker.mjs", "server/platform-api.mjs"] },
-    "TQ-11": { "name": "Production Hardening, observability, recovery, dan test", "status": "completed", "percent": 100, "files": ["server/database.mjs", "server/platform-api.mjs", "server/migrations/002-media-library.sql", "tests/deployment.test.mjs", "docs/OPERATIONS.md", "docs/RELEASE-CHECKLIST.md"] }
+    "TQ-11": { "name": "Production Hardening, observability, recovery, dan test", "status": "completed", "percent": 98, "files": ["server/database.mjs", "server/platform-api.mjs", "server/migrations/002-media-library.sql", "tests/deployment.test.mjs", "docs/OPERATIONS.md", "docs/RELEASE-CHECKLIST.md"] },
+    "TQ-12": { "name": "Multilingual Content, Media Stability, dan Single-Deploy Consolidation", "status": "completed", "percent": 100, "files": ["server/quran-store.mjs", "server/sources/quran-content-sources.json", "server/migrations/003-content-and-dedupe.sql", "server/platform-api.mjs", "server/storage.mjs", "server/index.mjs", "app/page.tsx", "app/globals.css", "lib/media-core.mjs", "tests/production-core.test.mjs", "tests/deployment.test.mjs"] }
   },
   "runtime_gates": {
-    "coolify_redeploy": "required-after-upload",
-    "database_migration_002": "automatic-on-start",
+    "coolify_redeploy": "required-once-after-upload",
+    "database_migration_003": "automatic-on-start",
     "real_recitation_accuracy_benchmark": "requires-user-audio-set",
-    "third_party_quran_content": "requires-license-verification-per-source"
+    "quranenc_content": "on-demand, version-aware, attribution-preserving, and source text locked against modification",
+    "media_download": "same-origin application stream; browser never receives internal MinIO hostname"
   }
 }

@@ -1,4 +1,4 @@
-// @phase TQ-03/TQ-06/TQ-07/TQ-10/TQ-11 — authenticated projects, media library, render, review, and recovery APIs.
+// @phase TQ-03/TQ-06/TQ-07/TQ-10/TQ-11/TQ-12 — authenticated projects, media library, dedupe, render, review, and recovery APIs.
 
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -241,6 +241,39 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
     })) });
   }
 
+  if (url.pathname === "/api/v1/assets/deduplicate" && request.method === "POST") {
+    await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
+    const result = await withTransaction(async (client) => {
+      const rows = await client.query(
+        `SELECT id,kind,checksum,analysis_status,last_used_at,created_at
+         FROM tq_media_assets
+         WHERE workspace_id=$1 AND archived_at IS NULL
+         ORDER BY checksum,kind,(analysis_status='analyzed') DESC,last_used_at DESC NULLS LAST,created_at ASC`,
+        [workspaceId],
+      );
+      const canonical = new Map();
+      const archived = [];
+      for (const row of rows.rows) {
+        const key = `${row.kind}:${row.checksum}`;
+        if (!canonical.has(key)) {
+          canonical.set(key, row.id);
+          continue;
+        }
+        const keepId = canonical.get(key);
+        await client.query(
+          `UPDATE tq_media_assets
+           SET archived_at=now(),metadata=COALESCE(metadata,'{}'::jsonb) || $1::jsonb
+           WHERE id=$2 AND workspace_id=$3`,
+          [JSON.stringify({ duplicateOf: keepId, deduplicatedAt: new Date().toISOString() }), row.id, workspaceId],
+        );
+        archived.push({ id: row.id, canonicalId: keepId });
+      }
+      return archived;
+    });
+    await audit(workspaceId, session.user.id, "asset.deduplicated", "workspace", workspaceId, { archived: result.length });
+    return sendJson(response, 200, { archived: result.length, duplicates: result });
+  }
+
   if (url.pathname === "/api/v1/assets" && request.method === "POST") {
     await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
     const projectId = String(url.searchParams.get("projectId") || "").trim() || null;
@@ -258,6 +291,7 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
     if (!body.length) throw Object.assign(new Error("Berkas kosong."), { statusCode: 400 });
     const detectedFamily = sniffMediaFamily(body);
     if (!detectedFamily) throw Object.assign(new Error("Format berkas tidak dikenali dari isi berkas."), { statusCode: 415 });
+    const uploadChecksum = `sha256:${createHash("sha256").update(body).digest("hex")}`;
     if (kind === "audio" && !["audio", "video"].includes(detectedFamily)) throw Object.assign(new Error("Isi berkas bukan audio/video yang valid."), { statusCode: 415 });
     if (kind === "background" && !["image", "video"].includes(detectedFamily)) throw Object.assign(new Error("Isi berkas bukan gambar/video yang valid."), { statusCode: 415 });
     const originalName = String(request.headers["x-file-name"] || `${kind}.bin`).replace(/[\r\n]/g, "").slice(0, 255);
@@ -270,6 +304,35 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
     const ayahEnd = Math.max(0, Number(request.headers["x-ayah-end"] || inferred.ayahEnd || 0)) || ayahStart;
     const qari = String(request.headers["x-qari"] || "").trim().slice(0, 160) || null;
     const durationSeconds = Math.max(0, Number(request.headers["x-duration-seconds"] || 0)) || null;
+
+    const duplicate = await query(
+      `SELECT * FROM tq_media_assets
+       WHERE workspace_id=$1 AND kind=$2 AND checksum=$3 AND archived_at IS NULL
+       ORDER BY (analysis_status='analyzed') DESC,last_used_at DESC NULLS LAST,created_at ASC LIMIT 1`,
+      [workspaceId, kind, uploadChecksum],
+    );
+    if (duplicate.rowCount) {
+      const asset = duplicate.rows[0];
+      const derivedScope = asset.scope === "generic" && scope !== "generic" ? scope : asset.scope;
+      const derivedSurah = asset.surah_number || surahNumber;
+      const derivedAyahStart = asset.ayah_start || ayahStart;
+      const derivedAyahEnd = asset.ayah_end || ayahEnd;
+      await query(
+        `UPDATE tq_media_assets SET scope=$1,surah_number=$2,ayah_start=$3,ayah_end=$4,qari=COALESCE(qari,$5),duration_seconds=COALESCE(duration_seconds,$6),last_used_at=now() WHERE id=$7`,
+        [derivedScope, derivedSurah, derivedAyahStart, derivedAyahEnd, qari, durationSeconds, asset.id],
+      );
+      await audit(workspaceId, session.user.id, "asset.reused", "asset", asset.id, { checksum: uploadChecksum, originalName, projectId });
+      return sendJson(response, 200, {
+        deduplicated: true,
+        asset: {
+          id: asset.id, projectId: asset.project_id, kind: asset.kind, originalName: asset.original_name, contentType: asset.content_type,
+          sizeBytes: Number(asset.size_bytes || body.length), checksum: asset.checksum, scope: derivedScope, surahNumber: derivedSurah,
+          ayahStart: derivedAyahStart, ayahEnd: derivedAyahEnd, qari: asset.qari || qari,
+          durationSeconds: asset.duration_seconds == null ? durationSeconds : Number(asset.duration_seconds), analysisStatus: asset.analysis_status || "pending",
+        },
+      });
+    }
+
     const key = storageKey(workspaceId, projectId || "shared", kind, extension);
     const stored = await putBuffer(key, body, contentType);
     const id = randomUUID();
@@ -290,16 +353,18 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
     const disposition = url.searchParams.get("disposition") === "inline" ? "inline" : "attachment";
     const download = await getDownload(asset.storage_key, asset.original_name, asset.content_type, disposition);
     await query("UPDATE tq_media_assets SET last_used_at=now() WHERE id=$1", [asset.id]).catch(() => {});
-    if (download.redirect) {
-      response.writeHead(302, { location: download.redirect, "cache-control": "private, no-store" });
-      return response.end();
-    }
-    response.writeHead(200, {
-      "content-type": asset.content_type,
-      "content-length": String(download.sizeBytes),
-      "content-disposition": `${disposition}; filename="${asset.original_name.replace(/["\r\n]/g, "")}"`,
+    const originalName = String(asset.original_name || "media.bin").replace(/["\r\n]/g, "");
+    const asciiName = originalName.replace(/[^\x20-\x7E]/g, "_") || "media.bin";
+    const encodedName = encodeURIComponent(originalName).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+    const headers = {
+      "content-type": download.contentType || asset.content_type,
+      "content-disposition": `${disposition}; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
       "cache-control": "private, no-store",
-    });
+      "accept-ranges": "none",
+      "x-content-type-options": "nosniff",
+    };
+    if (Number.isFinite(download.sizeBytes) && download.sizeBytes > 0) headers["content-length"] = String(download.sizeBytes);
+    response.writeHead(200, headers);
     return download.stream.pipe(response);
   }
 

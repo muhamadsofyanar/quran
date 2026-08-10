@@ -3,6 +3,7 @@ export type SubtitleSegment = {
   end: number;
   arabic: string;
   translation: string;
+  tafsir?: string;
 };
 
 export type QuranMatchItem = {
@@ -31,6 +32,6 @@ export function alignTranscriptSequence<T extends QuranMatchItem>(parts: Transcr
   words?: Array<{ word: string; heard: string; start: number; end: number; confidence: number | null }>;
 }>;
 export function formatSubtitleTime(seconds: number, decimal?: string): string;
-export function buildSrt(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "both"): string;
-export function buildVtt(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "both"): string;
-export function buildAss(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "both", ratio?: "16:9" | "9:16" | "1:1"): string;
+export function buildSrt(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "tafsir" | "both" | "all"): string;
+export function buildVtt(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "tafsir" | "both" | "all"): string;
+export function buildAss(segments: SubtitleSegment[], mode?: "arabic" | "translation" | "tafsir" | "both" | "all", ratio?: "16:9" | "9:16" | "1:1"): string;

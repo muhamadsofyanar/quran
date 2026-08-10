@@ -39,6 +39,8 @@ services:
       TQ_QURAN_AUTO_SYNC: "${TQ_QURAN_AUTO_SYNC:-true}"
       TQ_QURAN_SOURCE_URL: "${TQ_QURAN_SOURCE_URL:-https://api.alquran.cloud/v1/quran/quran-uthmani}"
       TQ_QURAN_CONTENT_SOURCES_JSON: "${TQ_QURAN_CONTENT_SOURCES_JSON:-}"
+      TQ_QURANENC_DISCOVERY: "${TQ_QURANENC_DISCOVERY:-true}"
+      TQ_CONTENT_CACHE_SECONDS: "${TQ_CONTENT_CACHE_SECONDS:-604800}"
 
       TQ_TRANSCRIBE_URL: "http://transcriber:8000/v1/audio/transcriptions"
       TQ_TRANSCRIBE_MODEL: "${WHISPER_MODEL:-small}"

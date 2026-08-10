@@ -1,336 +1,362 @@
 {
-  "release": "1.1.0-hotfix-loading",
-  "phase": "TQ-11",
-  "generatedAt": "2026-08-10",
+  "release": "1.2.0",
+  "phase": "TQ-12",
+  "generated_at": "2026-08-10T11:00:00+07:00",
+  "file_count": 71,
   "files": [
     {
       "path": ".dockerignore",
-      "bytes": 127,
+      "size": 127,
       "sha256": "a0350500c0afe0cc32f570b269d194434e3418b689988465be40b1589fac785c"
     },
     {
       "path": ".env.example",
-      "bytes": 2106,
-      "sha256": "b1655b161ee9b85d92348c690241322f7c6a35c82840ea9944dfaf3c7dd15901"
+      "size": 2343,
+      "sha256": "c9373b50f3d01c9e3929cb328af5d2c53bd584bf472a2727fb6ceeac533ceb1d"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 416,
+      "size": 416,
       "sha256": "5a48e5be3eab6cb5392e04408616e1086c9e7ed3675cdf3a7316f12e19b0d2b7"
     },
     {
       "path": ".gitignore",
-      "bytes": 588,
+      "size": 588,
       "sha256": "9d9375d414abc534377fbb00727fc8b1acf867db084e87fb22d919b42686aa95"
     },
     {
       "path": ".npmrc",
-      "bytes": 45,
+      "size": 45,
       "sha256": "a3909ac0447c469fda12c57374993be70f47ce73e49fd3124678c7c047f2214d"
     },
     {
       "path": "Dockerfile",
-      "bytes": 3516,
+      "size": 3516,
       "sha256": "b894a9605ff71943d5f7521ff80aa9ffdd7fc474e0d785314e673a1e5a1021b7"
     },
     {
       "path": "PHASE-MANIFEST.json",
-      "bytes": 2986,
-      "sha256": "0d2ab2525699dac40a25be51d8a687406de81ad441c5ffdfb2fffe251f8a069a"
+      "size": 3681,
+      "sha256": "7706a308a135266e8cf5ff3d1652015f15756c80329f364d29f29b52b647cf70"
     },
     {
       "path": "README.md",
-      "bytes": 3489,
-      "sha256": "62477e2737275636f8f0e480a8d10699b731453ce4ef6c47f2bef1414684c9b4"
+      "size": 4078,
+      "sha256": "b9e471fdbe65a754b82bc7d0b6c3472cac955fd3d8c4f21d2e7feceedf3b56ff"
     },
     {
       "path": "app/api/health/route.ts",
-      "bytes": 225,
-      "sha256": "e5cbfe73183bf04eb55b42078a027163341ade7c03b4a950ed5c3b0cf3bfb0f8"
+      "size": 225,
+      "sha256": "69c85bedd58d957a520da95a24fc7d36b73f8bd9a266fcef8d0325fc4ecd830d"
     },
     {
       "path": "app/chatgpt-auth.ts",
-      "bytes": 2404,
+      "size": 2404,
       "sha256": "17a965f8948b21510cdf8ecbd70c5fdf58100e10970463f6a8fd2cc4795f8044"
     },
     {
       "path": "app/globals.css",
-      "bytes": 70189,
-      "sha256": "d31567faa414f4ed3b3622cc3ee63b7692e425199c072343d8e10dd7533ea181"
+      "size": 71134,
+      "sha256": "d0d9036c0698e68a24dcd313e8db126fcc0f862873a916f517fdb0e8e76d407c"
     },
     {
       "path": "app/layout.tsx",
-      "bytes": 671,
+      "size": 671,
       "sha256": "7539398c2aded5d5c5e271ce1b13f17055f56232df5cd0044628ead8bf8edc7c"
     },
     {
       "path": "app/manifest.ts",
-      "bytes": 479,
+      "size": 479,
       "sha256": "793e643ee2dab0604f645bdeaa6cc409142894175c5fac99cad9a91d73c0a74d"
     },
     {
       "path": "app/page.tsx",
-      "bytes": 140195,
-      "sha256": "4eab8a8cbd264790ae6f1b6a8132513d75b97823de7f294f909d60fc1a91c3fe"
+      "size": 152848,
+      "sha256": "c649c9fff56d07536b0f5d200a9e095d5d7d6dfce91b53224434c473bc4a3cfb"
     },
     {
       "path": "build/sites-vite-plugin.ts",
-      "bytes": 1254,
+      "size": 1254,
       "sha256": "81b7cbfaeb970611572256aba0e313425beb3809f6426f63750696c15d9c756b"
     },
     {
       "path": "docker-compose.coolify.yml",
-      "bytes": 5285,
-      "sha256": "f25bfbbd702d3956a3a931eb58e07289e5059da0d499954c59eb7d5d49c5ebb9"
+      "size": 5417,
+      "sha256": "89004732ac66ae2b3103b5fe99db7723df5f727d30987b4b82c154d51736f930"
     },
     {
       "path": "docs/ARCHITECTURE.md",
-      "bytes": 2746,
-      "sha256": "81c12057bde45e64c15abe354f139c8d211561782504e73317ea7dad1dc322a2"
+      "size": 3281,
+      "sha256": "3ec62383f5b6e4957d267fcd344ba24810cd239bdac1be9cf970b5f0623f2773"
     },
     {
       "path": "docs/COOLIFY.md",
-      "bytes": 3192,
-      "sha256": "7dd26dd23363bacae861c9a36129b40bdf1f8aaae259bb308d875b282b58d1b9"
+      "size": 3099,
+      "sha256": "b2ef9a23132b04353c1fa4daac498e0d2df46b17e8fa46d311848c137c62bf63"
     },
     {
       "path": "docs/FUNCTION-MATRIX.md",
-      "bytes": 1674,
-      "sha256": "ef7bc4b3443cdc15b92e79bffec0ebd302f98a02b602fecae71d1b94873234df"
+      "size": 1893,
+      "sha256": "b699ffbfabd27d0fac7a166eb52a810ed18e07f7f185f2f902f0522342da8203"
+    },
+    {
+      "path": "docs/HOTFIX-media-stream-v1.1.1.md",
+      "size": 552,
+      "sha256": "5ba0f9fd1db8b4bc491c9474df3d6a3b6cc97ef758084509993afdace6085423"
     },
     {
       "path": "docs/HOTFIX-v1.1.0-loading.md",
-      "bytes": 1072,
+      "size": 1072,
       "sha256": "3e11bfbc6b87d4dbafba0df6c7effa0fa14bb7272f3aac9112ac6f28cfd01739"
     },
     {
       "path": "docs/OPERATIONS.md",
-      "bytes": 3024,
-      "sha256": "84c7c14f233ddb185a2b82bc19ef828b78816c8a0c66158bdda62bf613c41b8f"
+      "size": 3784,
+      "sha256": "9b71618a843bef9da5c511b25635c7d4207b055cdf0777ceb64efbe1d6caf02c"
     },
     {
       "path": "docs/RELEASE-CHECKLIST.md",
-      "bytes": 1902,
-      "sha256": "2a04f6de112722edbc4a11dba0864fa162d0a6b47a06e437ca0b231a2e8e833d"
+      "size": 1989,
+      "sha256": "617e72429ca037bd521c5f5c50a243acbbbca402b59026c3270e956d8bde9752"
     },
     {
       "path": "docs/ROADMAP.md",
-      "bytes": 900,
-      "sha256": "dd877a58e9e6292ba55692575ec7da0aa575bf4c5f0c28f564b1efc6099c5382"
+      "size": 1039,
+      "sha256": "a38fc0ff4960430c1e4bc948f2368e01bd6e5c36f034d73b18517292405f971f"
     },
     {
       "path": "docs/SECURITY.md",
-      "bytes": 2049,
-      "sha256": "d6ffe6b6254ed04ffbe7b8aaa070fb0cd646dd6ac6cc8559c736bc785a65a527"
+      "size": 2647,
+      "sha256": "dcedd415dce1d2fc7bd31f61ea643edefb2f8dfb58b52378896f95ef37878f4d"
     },
     {
       "path": "docs/SOURCES.md",
-      "bytes": 1109,
-      "sha256": "8dc9b283b5832a2abedc08946119efd979ddb83fcfa32136665c382f044ff7ad"
+      "size": 2044,
+      "sha256": "c5185a69e2777025fa4eb1f07080131334ec454ae007f4cd5849b6bfaa8a390e"
     },
     {
       "path": "docs/UPDATE-v1.1.0.md",
-      "bytes": 2489,
+      "size": 2489,
       "sha256": "05031ccd1f1dff5c4b3fa8b195607718b09f664b5d4c20c8b300a5b0d5b9afff"
     },
     {
+      "path": "docs/UPDATE-v1.2.0.md",
+      "size": 2005,
+      "sha256": "b70f26b8e7aa2899ba1e299b5662e1418240d41eb3e335d8ab75219f622207eb"
+    },
+    {
       "path": "docs/VERIFICATION-v1.1.0.md",
-      "bytes": 1746,
+      "size": 1746,
       "sha256": "3055bd7c8c30f0185afc2eeeab762a250790d6724f5d0020b87931192b53c32c"
     },
     {
+      "path": "docs/VERIFICATION-v1.2.0.md",
+      "size": 1244,
+      "sha256": "8e420a3c1fd69c11ab98b18a17e76d3c243904ec666cb6ec0bb0058b9c73a926"
+    },
+    {
       "path": "eslint.config.mjs",
-      "bytes": 465,
+      "size": 465,
       "sha256": "870f1adccecf3051cbcd9fd307cef51d7633cf510979c181a81f4b1797273493"
     },
     {
       "path": "lib/media-core.d.ts",
-      "bytes": 1787,
-      "sha256": "ca889565255588a39a8330aa703011a1b56f04145130fa1baa9b191c0eaf34c0"
+      "size": 1863,
+      "sha256": "2d464430e0c9e32dbdd402b45f705239ac446733739c2352f1033e282523ed9c"
     },
     {
       "path": "lib/media-core.mjs",
-      "bytes": 15996,
-      "sha256": "a64d1d392975a88ce250a7cb7a0f873fd501112cec455ac19c4f22d3b7474b76"
+      "size": 16148,
+      "sha256": "323ec6ffdc1fcc411e75c674503391adb07b6f6a9a8117853983ab3d797f94c1"
     },
     {
       "path": "next.config.ts",
-      "bytes": 133,
+      "size": 133,
       "sha256": "614bce25b089c3f19b1e17a6346c74b858034040154c6621e7d35303004767cc"
     },
     {
       "path": "package-lock.json",
-      "bytes": 361711,
-      "sha256": "5dfb5417a39423f2208722f2b97a45d37d2a66ec4ff247b3858cb333d744af34"
+      "size": 361711,
+      "sha256": "9dbe7e2f0ba86a4ce6b43d28f73f6110d65c16d90ea6f528aefecf838a535004"
     },
     {
       "path": "package.json",
-      "bytes": 1587,
-      "sha256": "f4a1e3551bda7315b489f4f79a4ebf6a34e4b9f086de5326326fb933dac0c699"
+      "size": 1587,
+      "sha256": "d7ebf95bb9c1e460290538e7b2009df938a0c81c981938f67222942176539713"
     },
     {
       "path": "postcss.config.mjs",
-      "bytes": 94,
+      "size": 94,
       "sha256": "dfac7ac2d86d326a0e5adb024e7943c181393ed17a5fcb8f0315b24c7da6ddde"
     },
     {
       "path": "public/favicon.svg",
-      "bytes": 767,
+      "size": 767,
       "sha256": "47b1b8fae1c492e8eecf3ae30c2c7c5ac73955811fe9590bfc7715a7845ae48f"
     },
     {
       "path": "public/file.svg",
-      "bytes": 392,
+      "size": 392,
       "sha256": "1e0ae4d1a1ddfa36752988647b731e4abf150c414d069ec83c96fb0aaeff0307"
     },
     {
       "path": "public/globe.svg",
-      "bytes": 1036,
+      "size": 1036,
       "sha256": "d051a8c47936990a9085693d307bb7cea1bc1b6d7ed956bcbaacf674f4ec96b9"
     },
     {
       "path": "public/window.svg",
-      "bytes": 386,
+      "size": 386,
       "sha256": "decf1cf7bb22b5c99c4857cfcd5718ce5465c4454166317589c83fc73df74b66"
     },
     {
       "path": "scripts/build-verified.sh",
-      "bytes": 699,
+      "size": 699,
       "sha256": "f7d8b0b181010ed37633337442115ca282cfdc8f9b0b58db347d7f4e83251b35"
     },
     {
       "path": "scripts/install-ci.sh",
-      "bytes": 6326,
+      "size": 6326,
       "sha256": "f63e840679ca885f206d17b7f8285199bb6bcd47ebc360008d04d16b8e54f63c"
     },
     {
       "path": "scripts/preflight.mjs",
-      "bytes": 1279,
-      "sha256": "5c1c033538d95c1cab671aa65e3de75f49eb5b9f8ab78e0574981626258657b5"
+      "size": 2663,
+      "sha256": "621152ee272852f94f02ec1c74f057ab2a6f240a2d878b676f57e28080a32568"
     },
     {
       "path": "scripts/runtime-smoke.mjs",
-      "bytes": 3038,
-      "sha256": "53841e23e234b2506452f21fb0afd297c84f08e625692e51a87cdab641df1490"
+      "size": 3038,
+      "sha256": "160d7cdf60611a2357321958930c066b070c7e1e4f1889fe9ab99361a82f5ab3"
     },
     {
       "path": "scripts/sites-env.sh",
-      "bytes": 1530,
+      "size": 1530,
       "sha256": "df86ebfc27d2f00860036658e933ac0ddd7b5f6879aa5d51218f0863c7e1fb60"
     },
     {
       "path": "scripts/sync-quran.mjs",
-      "bytes": 224,
+      "size": 224,
       "sha256": "59940ea18c01af51e6fe5585fb3c388736952abac9707fcd0cdbc1c3aa447b88"
     },
     {
       "path": "scripts/validate-artifact.sh",
-      "bytes": 1377,
+      "size": 1377,
       "sha256": "26a699e4a716e11266e6684e5950c96d333c34155b2cfec71b2ec881074b1047"
     },
     {
       "path": "server/auth.mjs",
-      "bytes": 8521,
+      "size": 8521,
       "sha256": "48ff72fe20415445afd0e9b1207d8c1777767c054e6035886a99132395b218a5"
     },
     {
       "path": "server/database.mjs",
-      "bytes": 3534,
+      "size": 3534,
       "sha256": "45eed184ca606e5449828b10f08502f4cae5f861bb9031830eaae58a862fc7ba"
     },
     {
       "path": "server/index.mjs",
-      "bytes": 22401,
-      "sha256": "2404bbc44cbb8161a1ce02687564e705a2869510de7df8fbdccc2806ce4c0198"
+      "size": 22848,
+      "sha256": "0127214e8e98ae5dbfdd16390596a9ed1881e01230a0238d9e038f68cb818631"
     },
     {
       "path": "server/migrations/001-production.sql",
-      "bytes": 5863,
+      "size": 5863,
       "sha256": "a9216f593422020da73dded425a958c36cf15d49f3993e25ba17b086f115f0c6"
     },
     {
       "path": "server/migrations/002-media-library.sql",
-      "bytes": 2993,
+      "size": 2993,
       "sha256": "56fd605c0d0266183544d160886b3df08bd952f5e2d1a5861b88122644ce450d"
     },
     {
+      "path": "server/migrations/003-content-and-dedupe.sql",
+      "size": 3671,
+      "sha256": "44358af22d27463f7d6ec7f930510ff6d8198f3434dacdd870f1747bb9e16c96"
+    },
+    {
       "path": "server/platform-api.mjs",
-      "bytes": 39398,
-      "sha256": "f7eb199b4ecedc98240837be20faac516435591d80bc61a641217b145ee86518"
+      "size": 43107,
+      "sha256": "0e7de35385965bb7ca03d829ca11885ba98f125c8dff5fe5f2c23099b7dbabac"
     },
     {
       "path": "server/quran-store.mjs",
-      "bytes": 9777,
-      "sha256": "a9df5f932414df0305b93b35609117672a773ee88d6d90767b5c0af6d61d1ea1"
+      "size": 23180,
+      "sha256": "eb2a426f286f59582c80edf98d14801144ec7257d6092615f9f7b386d5769679"
     },
     {
       "path": "server/render-queue.mjs",
-      "bytes": 2227,
+      "size": 2227,
       "sha256": "95f737e87b023405329791909f2a52f787aa76375dc4eac53f9e96bf522a6f0a"
     },
     {
       "path": "server/render-worker.mjs",
-      "bytes": 6837,
+      "size": 6837,
       "sha256": "b485b9526ac35a48000620d2c0f6937215c4e29bc29486eac224d382855a087d"
     },
     {
       "path": "server/sources/quran-content-sources.json",
-      "bytes": 925,
-      "sha256": "cde36fcee92ed6baecd0f44a7becdf79fcab5eecaefd834f61d1f106c4573684"
+      "size": 2269,
+      "sha256": "f26d62d9c1daa582fb32549db001c7f182ae97e32d6d566031c41e1c4ab7d26c"
     },
     {
       "path": "server/storage.mjs",
-      "bytes": 4940,
-      "sha256": "f71588238c986afbccd8ea3d7696dc9d03d42ab28595e66d52f118c59ae0dce4"
+      "size": 5345,
+      "sha256": "8587f0cf04bdfff448f1810a9e84f2ed24e963e9cdae56c3a97d0de473bad44c"
     },
     {
       "path": "services/transcriber/Dockerfile",
-      "bytes": 951,
+      "size": 951,
       "sha256": "ec0773d4090dc3dfab0be10a70f0adf8ab1b3e9af02fb92c583bcfa9df944f61"
     },
     {
       "path": "services/transcriber/app.py",
-      "bytes": 4083,
-      "sha256": "a039c9718d54b13ae53580526109045337d1c8fd88575ef5fa45673ccdd9d5d1"
+      "size": 4083,
+      "sha256": "9b0f705ce7f66d5a3efe37a85648bbfaefc64e1c754f54b3428aafb9ba91235a"
     },
     {
       "path": "services/transcriber/requirements.txt",
-      "bytes": 94,
+      "size": 94,
       "sha256": "ff23cf61681898b9fd18fb00bc409f10c7f74c3b2e90eecf6027ed5ded8671cb"
     },
     {
+      "path": "tests/content-core.test.mjs",
+      "size": 3641,
+      "sha256": "99031f1ef0a0d6c4878e457a1ae59604af7aa3c52e08a702a0bfde768c834397"
+    },
+    {
       "path": "tests/deployment.test.mjs",
-      "bytes": 3680,
-      "sha256": "c1c0e4d45f0af57dc926bc92a31166c2128153788f288629d60195220e839be3"
+      "size": 4336,
+      "sha256": "5cba0993a20b164e7676288c055051528ddc8f097d33af32647604d6daef64cf"
     },
     {
       "path": "tests/media-core.test.mjs",
-      "bytes": 3561,
-      "sha256": "63189bcd1b7682cf962ac388b047da81e51b535b6f28271accbc8f1dee666210"
+      "size": 3760,
+      "sha256": "ca39388e8225178e9ece1cb50252df88284db0596a436fbb4fbac465472100a3"
     },
     {
       "path": "tests/production-core.test.mjs",
-      "bytes": 2264,
-      "sha256": "a8f1286d3ce71cbfc8b482086c56fe142614bf6d8f3f469b35a65b4af974410e"
+      "size": 5242,
+      "sha256": "121af4a14ba0df2d3368e819bc5b50af48e21294a1b0d900498a95cddeaa8743"
     },
     {
       "path": "tests/rendered-html.test.mjs",
-      "bytes": 2342,
-      "sha256": "ba26c6bbd148620d07e575876458192111d14eb6add4edc66012da7036a6896a"
+      "size": 2348,
+      "sha256": "8e80ddc3838fc56087ee292897aa9d82243415f42f10000a579fb18ccf7e2bda"
     },
     {
       "path": "tsconfig.json",
-      "bytes": 666,
+      "size": 666,
       "sha256": "be18523b23b78b6e1a876ddd107d330f0168bddf09d751b57e0b5edce69c66f3"
     },
     {
       "path": "vite.config.ts",
-      "bytes": 1965,
+      "size": 1965,
       "sha256": "893e3b885ae76c8f5c33f6abe24d0ed2ab5e45d0de91cec97587104c7ad2dc46"
     },
     {
       "path": "worker/index.ts",
-      "bytes": 1731,
+      "size": 1731,
       "sha256": "2ed36d7fa996e946d9d7695c5925e7760246f6bf8fa35c06f1bc515c087dc450"
     }
   ]
