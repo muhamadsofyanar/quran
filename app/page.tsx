@@ -399,7 +399,7 @@ export default function Home() {
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioFile, setAudioFile] = useState<File>();
   const [audioName, setAudioName] = useState<string>();
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>(waveform);
+  const [waveformPeaks] = useState<number[]>(waveform);
   const [backgroundUrl, setBackgroundUrl] = useState<string>();
   const [backgroundFile, setBackgroundFile] = useState<File>();
   const [isPlaying, setIsPlaying] = useState(false);
@@ -579,7 +579,7 @@ export default function Home() {
     }
   }
 
-  async function useMediaAsset(asset: MediaAsset) {
+  async function applyMediaAsset(asset: MediaAsset) {
     if (!activeProject) return setToast("Buat atau buka proyek terlebih dahulu.");
     if (asset.kind === "audio") {
       setProjects((items) => items.map((project) => project.id === activeProject.id ? { ...project, audioAssetId: asset.id, audioName: asset.originalName, duration: asset.durationSeconds || project.duration, updatedAt: new Date().toISOString() } : project));
@@ -876,30 +876,35 @@ export default function Home() {
   useEffect(() => {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
     void refreshMediaLibrary();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, sessionMode]);
 
   useEffect(() => {
     if (sessionMode !== "authenticated" || !activeProject?.audioAssetId) return;
     if (activeProject.audioAssetId === loadedAudioAssetId) return;
     void loadAudioAsset(activeProject.audioAssetId, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject?.audioAssetId, activeProject?.id, loadedAudioAssetId, mediaAssets, sessionMode]);
 
   useEffect(() => {
     if (sessionMode !== "authenticated" || !activeProject?.backgroundAssetId) return;
     if (activeProject.backgroundAssetId === loadedBackgroundAssetId) return;
     void loadBackgroundAsset(activeProject.backgroundAssetId, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject?.backgroundAssetId, activeProject?.id, loadedBackgroundAssetId, mediaAssets, sessionMode]);
 
   useEffect(() => {
     if (!selectedSegment || !showTranslation || translationSource === "Teks manual") return;
     if (selectedSegment.translation) return;
     void fetchContentForSegment(translationSource, selectedSegment, "translation", true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSegmentId, translationSource, showTranslation]);
 
   useEffect(() => {
     if (!selectedSegment || !showTafsir || tafsirSource === "Teks manual") return;
     if (selectedSegment.tafsir) return;
     void fetchContentForSegment(tafsirSource, selectedSegment, "tafsir", true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSegmentId, tafsirSource, showTafsir]);
 
   useEffect(() => {
@@ -972,6 +977,7 @@ export default function Home() {
     void refresh();
     const timer = window.setInterval(refresh, 3000);
     return () => { active = false; window.clearInterval(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capabilities.queue?.healthy, session, sessionMode]);
 
   useEffect(() => {
@@ -2025,7 +2031,7 @@ export default function Home() {
               action={<><input ref={mediaUploadRef} type="file" accept="audio/*,video/*,image/*" multiple hidden onChange={(event) => void uploadLibraryFiles(Array.from(event.target.files || []))}/><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Tambah media</button></>}
             />
             <section className="media-summary">
-              <article><span className="metric-icon green"><Icon name="audio"/></span><div><small>Audio Qur'an</small><strong>{mediaAssets.filter((asset) => asset.kind === "audio").length}</strong><em>surah penuh & per ayat</em></div></article>
+              <article><span className="metric-icon green"><Icon name="audio"/></span><div><small>Audio Qur’an</small><strong>{mediaAssets.filter((asset) => asset.kind === "audio").length}</strong><em>surah penuh & per ayat</em></div></article>
               <article><span className="metric-icon gold"><Icon name="layers"/></span><div><small>Latar visual</small><strong>{mediaAssets.filter((asset) => asset.kind === "background").length}</strong><em>gambar dan video</em></div></article>
               <article><span className="metric-icon blue"><Icon name="play"/></span><div><small>Hasil render</small><strong>{mediaAssets.filter((asset) => asset.kind === "render-output").length}</strong><em>MP4 tersimpan</em></div></article>
               <article><span className="metric-icon violet"><Icon name="shield"/></span><div><small>Sudah dianalisis</small><strong>{mediaAssets.filter((asset) => asset.analysisStatus === "analyzed").length}</strong><em>metadata alignment tersedia</em></div></article>
@@ -2045,7 +2051,7 @@ export default function Home() {
               <button className="media-refresh" onClick={() => void deduplicateMediaAssets()}><Icon name="layers" size={14}/> Rapikan duplikat</button>
               <button className="media-refresh" onClick={() => void refreshMediaLibrary()}><Icon name="clock" size={14}/> Muat ulang</button>
             </div>
-            {filteredMediaAssets.length === 0 ? <div className="empty-state media-empty"><span><Icon name="audio" size={28}/></span><h2>Belum ada media sesuai filter</h2><p>Unggah audio Qur'an. Nama <strong>0001.mp3</strong> otomatis dikenali sebagai Surah 1 penuh, sedangkan <strong>001001.mp3</strong> sebagai QS 1:1.</p><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Unggah media</button></div> : <div className="media-grid">
+            {filteredMediaAssets.length === 0 ? <div className="empty-state media-empty"><span><Icon name="audio" size={28}/></span><h2>Belum ada media sesuai filter</h2><p>Unggah audio Qur’an. Nama <strong>0001.mp3</strong> otomatis dikenali sebagai Surah 1 penuh, sedangkan <strong>001001.mp3</strong> sebagai QS 1:1.</p><button className="primary-button" onClick={() => mediaUploadRef.current?.click()}><Icon name="upload"/> Unggah media</button></div> : <div className="media-grid">
               {filteredMediaAssets.map((asset) => {
                 const quranLabel = asset.scope === "surah" && asset.surahNumber ? `Surah ${asset.surahNumber}${asset.ayahEnd ? ` · ayat ${asset.ayahStart || 1}–${asset.ayahEnd}` : " · penuh"}` : asset.scope === "ayah" && asset.surahNumber ? `QS ${asset.surahNumber}:${asset.ayahStart}` : "Media umum";
                 const statusLabel = asset.analysisStatus === "analyzed" ? "Sinkron" : asset.analysisStatus === "needs-review" ? "Perlu diperiksa" : asset.analysisStatus === "failed" ? "Analisis gagal" : "Belum dianalisis";
@@ -2053,7 +2059,7 @@ export default function Home() {
                   <div className={`media-card-icon kind-${asset.kind}`}><Icon name={asset.kind === "audio" ? "audio" : asset.kind === "render-output" ? "play" : "layers"}/></div>
                   <div className="media-card-main"><div className="media-card-title"><strong title={asset.originalName}>{asset.originalName}</strong><span className={`media-analysis ${asset.analysisStatus}`}>{statusLabel}</span></div><small>{quranLabel}{asset.qari ? ` · ${asset.qari}` : ""}</small><div className="media-meta"><span>{asset.durationSeconds ? formatDuration(asset.durationSeconds) : "Durasi belum dibaca"}</span><span>{formatBytes(asset.sizeBytes)}</span><span>{relativeDate(asset.createdAt)}</span></div></div>
                   <div className="media-card-actions">
-                    {(asset.kind === "audio" || asset.kind === "background" || asset.kind === "logo") && <button className="primary-button" onClick={() => void useMediaAsset(asset)}>{asset.kind === "audio" ? "Gunakan audio" : "Gunakan latar"}</button>}
+                    {(asset.kind === "audio" || asset.kind === "background" || asset.kind === "logo") && <button className="primary-button" onClick={() => void applyMediaAsset(asset)}>{asset.kind === "audio" ? "Gunakan audio" : "Gunakan latar"}</button>}
                     <button className="secondary-button" onClick={() => window.open(asset.kind === "render-output" ? asset.downloadUrl : asset.streamUrl, "_blank", "noopener,noreferrer")}>{asset.kind === "audio" ? "Putar" : asset.kind === "render-output" ? "Unduh" : "Buka"}</button>
                     {(asset.kind === "audio" || asset.kind === "background") && <button className="secondary-button" onClick={() => void editMediaMetadata(asset)}>Metadata</button>}
                     <button className="media-archive" disabled={mediaBusyId === asset.id} onClick={() => void archiveMediaAsset(asset)}>Arsipkan</button>

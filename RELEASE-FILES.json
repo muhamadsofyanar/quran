@@ -1,7 +1,7 @@
 {
-  "release": "1.2.0-font-render-hotfix",
+  "release": "1.2.1-font-render-ci-verify-hotfix",
   "phase": "TQ-12",
-  "generated_at": "2026-08-10T12:23:00+07:00",
+  "generated_at": "2026-08-10T14:25:00+07:00",
   "file_count": 72,
   "files": [
     {
@@ -71,8 +71,8 @@
     },
     {
       "path": "app/page.tsx",
-      "size": 153870,
-      "sha256": "7be329f5ff4a02de1b4d8426a12a0d1473f682dd8406082ee1fce791605fa2cc"
+      "size": 154208,
+      "sha256": "287750daa95d8de0f1f830eb61af73095d7f9eecff0d714598170f226413fe1a"
     },
     {
       "path": "build/sites-vite-plugin.ts",
@@ -101,8 +101,8 @@
     },
     {
       "path": "docs/HOTFIX-font-render-v1.2.1.md",
-      "size": 780,
-      "sha256": "ede4ea9250ca088245be4ac3af3480dad37a47b89dca823e8181d2351986366a"
+      "size": 1559,
+      "sha256": "83a2ffe2c58ec2d1d84a9b5f951ddf44921e16fdbbabdc38e9e9ee812ec42172"
     },
     {
       "path": "docs/HOTFIX-media-stream-v1.1.1.md",
