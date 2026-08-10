@@ -28,6 +28,17 @@ Konten sumber tidak boleh dimodifikasi ketika digunakan sebagai edisi QuranEnc. 
 
 Konten QuranEnc disimpan per edisi/per surah di `TQ_DATA_DIR/quran/content`. Default TTL adalah tujuh hari (`TQ_CONTENT_CACHE_SECONDS=604800`). Katalog di-cache di memory selama enam jam.
 
+## Al Quran Cloud — katalog qari dan audio
+
+TQ-13 memakai katalog edisi audio `https://api.alquran.cloud/v1/edition/format/audio` dan metadata audio per surah. Audio ayat hanya diunduh dari host HTTPS Islamic Network yang diizinkan adaptor.
+
+- Katalog hidup disimpan di `TQ_DATA_DIR/quran/audio/catalog.json` selama enam jam.
+- Audio per ayat disimpan on-demand di `TQ_DATA_DIR/quran/audio/ayah/{edition}/{globalAyah}.mp3`.
+- Hasil gabungan disimpan ke MinIO dan membawa edition, qari, surah/rentang, marker, URL sumber, atribusi, dan `sourceKey`.
+- Hak cipta rekaman tetap berada pada qari atau pemegang hak; aplikasi menampilkan atribusi Al Quran Cloud / Islamic Network.
+
+Dokumentasi resmi: `https://alquran.cloud/api`, `https://alquran.cloud/cdn`, dan `https://alquran.cloud/terms-and-conditions`.
+
 ## Sumber tambahan khusus operator
 
 `TQ_QURAN_CONTENT_SOURCES_JSON` tetap dapat dipakai untuk menambah/override registri. Sumber non-QuranEnc wajib memiliki metadata lisensi dan `redistributionAllowed: true` + `enabled: true` sebelum disinkronkan.

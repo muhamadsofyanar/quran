@@ -1,4 +1,4 @@
-// @phase TQ-03/TQ-06/TQ-07/TQ-10/TQ-11/TQ-12 — authenticated projects, media library, dedupe, render, review, and recovery APIs.
+// @phase TQ-03/TQ-06/TQ-07/TQ-10/TQ-11/TQ-12/TQ-13 — authenticated projects, Qur'an audio jobs, media library, dedupe, render, review, and recovery APIs.
 
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -13,6 +13,14 @@ import {
   requireWorkspaceRole,
 } from "./auth.mjs";
 import { databaseConfigured, query, withTransaction } from "./database.mjs";
+import { enqueueQuranAudio } from "./quran-audio-queue.mjs";
+import {
+  buildAudioSourceKey,
+  listAudioEditions,
+  segmentsFromMarkers,
+  validateAudioSelection,
+} from "./quran-audio.mjs";
+import { getSurah } from "./quran-store.mjs";
 import { cancelQueuedRender, enqueueRender, queueConfigured, retryRender } from "./render-queue.mjs";
 import { deleteObject, getDownload, putBuffer, storageKey } from "./storage.mjs";
 
@@ -57,6 +65,30 @@ function projectRow(row) {
 
 function workspaceFor(session, request, url) {
   return String(request.headers["x-tq-workspace"] || url.searchParams.get("workspace") || session.workspaces[0]?.id || "");
+}
+
+function assetPayload(asset, workspaceId) {
+  if (!asset) return null;
+  return {
+    id: asset.id,
+    projectId: asset.project_id,
+    kind: asset.kind,
+    originalName: asset.original_name,
+    contentType: asset.content_type,
+    sizeBytes: Number(asset.size_bytes || 0),
+    checksum: asset.checksum,
+    scope: asset.scope || "generic",
+    surahNumber: asset.surah_number,
+    ayahStart: asset.ayah_start,
+    ayahEnd: asset.ayah_end,
+    qari: asset.qari,
+    durationSeconds: asset.duration_seconds == null ? null : Number(asset.duration_seconds),
+    analysisStatus: asset.analysis_status || "pending",
+    metadata: asset.metadata || {},
+    createdAt: asset.created_at,
+    downloadUrl: `/api/v1/assets/${asset.id}/download?workspace=${encodeURIComponent(workspaceId)}`,
+    streamUrl: `/api/v1/assets/${asset.id}/download?workspace=${encodeURIComponent(workspaceId)}&disposition=inline`,
+  };
 }
 
 async function audit(workspaceId, actorId, action, entityType, entityId, detail = {}) {
@@ -420,6 +452,130 @@ async function handleAssets(request, response, url, helpers, session, workspaceI
   return false;
 }
 
+async function handleQuranAudio(request, response, url, helpers, session, workspaceId) {
+  const { readBody, sendJson } = helpers;
+  const jobMatch = url.pathname.match(/^\/api\/v1\/quran-audio\/jobs\/([a-f0-9-]+)$/i);
+
+  const serializeJob = async (job) => {
+    let asset = null;
+    if (job?.output_asset_id) {
+      const found = await query("SELECT * FROM tq_media_assets WHERE id=$1 AND workspace_id=$2", [job.output_asset_id, workspaceId]);
+      asset = assetPayload(found.rows[0], workspaceId);
+    }
+    return {
+      id: job.id,
+      projectId: job.project_id,
+      edition: job.edition,
+      qariName: job.qari_name,
+      surahNumber: job.surah_number,
+      ayahStart: job.ayah_start,
+      ayahEnd: job.ayah_end,
+      status: job.status,
+      progress: Number(job.progress || 0),
+      cacheHit: Boolean(job.cache_hit),
+      asset,
+      segments: Array.isArray(job.segments) ? job.segments : [],
+      error: job.error || null,
+    };
+  };
+
+  if (url.pathname === "/api/v1/quran-audio/jobs" && request.method === "GET") {
+    await requireWorkspaceRole(session, workspaceId);
+    const projectId = String(url.searchParams.get("projectId") || "");
+    if (!projectId) throw Object.assign(new Error("projectId wajib diisi."), { statusCode: 400 });
+    const result = await query(
+      `SELECT * FROM tq_quran_audio_jobs
+       WHERE workspace_id=$1 AND project_id=$2
+       ORDER BY (status IN ('queued','downloading','merging','storing')) DESC,created_at DESC LIMIT 1`,
+      [workspaceId, projectId],
+    );
+    return sendJson(response, 200, { job: result.rows[0] ? await serializeJob(result.rows[0]) : null });
+  }
+
+  if (url.pathname === "/api/v1/quran-audio/jobs" && request.method === "POST") {
+    await requireWorkspaceRole(session, workspaceId, ["owner", "editor"]);
+    rateLimit(request, `quran-audio:${workspaceId}`, 12, 60_000);
+    if (!queueConfigured()) throw Object.assign(new Error("Antrean audio belum tersedia."), { statusCode: 503 });
+    const payload = await jsonBody(request, readBody, 100_000);
+    const projectId = String(payload.projectId || "");
+    const project = await query(
+      "SELECT id FROM tq_projects WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL",
+      [projectId, workspaceId],
+    );
+    if (!project.rowCount) throw Object.assign(new Error("Proyek tidak ditemukan."), { statusCode: 404 });
+    const surah = await getSurah(payload.surahNumber);
+    if (!surah) throw Object.assign(new Error("Surah tidak ditemukan pada korpus produksi."), { statusCode: 400 });
+    const catalog = await listAudioEditions();
+    const selection = validateAudioSelection({
+      edition: payload.edition,
+      surahNumber: payload.surahNumber,
+      ayahStart: payload.ayahStart,
+      ayahEnd: payload.ayahEnd,
+      ayahCount: surah.ayahCount || surah.ayahs?.length,
+      editions: catalog.editions,
+    });
+    const reciter = catalog.editions.find((item) => item.edition === selection.edition);
+    const qariName = String(reciter?.englishName || reciter?.name || selection.edition).slice(0, 160);
+    const sourceKey = buildAudioSourceKey(selection);
+    const cachedResult = await query(
+      `SELECT * FROM tq_media_assets
+       WHERE workspace_id=$1 AND archived_at IS NULL AND metadata->>'sourceKey'=$2
+       ORDER BY created_at LIMIT 1`,
+      [workspaceId, sourceKey],
+    );
+    const cached = cachedResult.rows.find((asset) =>
+      Array.isArray(asset?.metadata?.markers) &&
+      asset.metadata.markers.length === selection.ayahEnd - selection.ayahStart + 1
+    );
+    const jobId = randomUUID();
+    if (cached) {
+      const arabicByAyah = new Map((surah.ayahs || []).map((item) => [Number(item.ayah), String(item.arabic || "")]));
+      const markers = cached.metadata.markers.map((marker) => ({
+        ...marker,
+        arabic: marker.arabic || arabicByAyah.get(Number(marker.ayah)) || "",
+      }));
+      const segments = segmentsFromMarkers(markers, surah);
+      await query(
+        `INSERT INTO tq_quran_audio_jobs(
+          id,workspace_id,project_id,requested_by,edition,qari_name,surah_number,ayah_start,ayah_end,source_key,
+          status,progress,output_asset_id,segments,cache_hit,finished_at
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'complete',100,$11,$12,true,now())`,
+        [jobId, workspaceId, projectId, session.user.id, selection.edition, qariName, selection.surahNumber, selection.ayahStart, selection.ayahEnd, sourceKey, cached.id, segments],
+      );
+      await audit(workspaceId, session.user.id, "quran-audio.cache-hit", "quran-audio", jobId, { sourceKey, outputAssetId: cached.id });
+      return sendJson(response, 200, {
+        job: { id: jobId, projectId, status: "complete", progress: 100, cacheHit: true, asset: assetPayload(cached, workspaceId), segments, error: null },
+      });
+    }
+    await query(
+      `INSERT INTO tq_quran_audio_jobs(
+        id,workspace_id,project_id,requested_by,edition,qari_name,surah_number,ayah_start,ayah_end,source_key
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [jobId, workspaceId, projectId, session.user.id, selection.edition, qariName, selection.surahNumber, selection.ayahStart, selection.ayahEnd, sourceKey],
+    );
+    try {
+      await enqueueQuranAudio(jobId);
+    } catch (error) {
+      await query("UPDATE tq_quran_audio_jobs SET status='failed',error=$1,finished_at=now() WHERE id=$2", [String(error.message || error).slice(0, 8_000), jobId]);
+      throw error;
+    }
+    await audit(workspaceId, session.user.id, "quran-audio.queued", "quran-audio", jobId, { sourceKey, projectId });
+    return sendJson(response, 202, {
+      job: { id: jobId, projectId, status: "queued", progress: 0, cacheHit: false, asset: null, segments: [], error: null },
+    });
+  }
+
+  if (jobMatch && request.method === "GET") {
+    await requireWorkspaceRole(session, workspaceId);
+    const result = await query("SELECT * FROM tq_quran_audio_jobs WHERE id=$1 AND workspace_id=$2", [jobMatch[1], workspaceId]);
+    const job = result.rows[0];
+    if (!job) return sendJson(response, 404, { error: "Pekerjaan audio tidak ditemukan." });
+    return sendJson(response, 200, { job: await serializeJob(job) });
+  }
+
+  return false;
+}
+
 async function handleCollaboration(request, response, url, helpers, session, workspaceId) {
   const { readBody, sendJson } = helpers;
   if (url.pathname === "/api/v1/members" && request.method === "GET") {
@@ -642,7 +798,7 @@ export async function handlePlatformApi(request, response, url, helpers) {
   const session = await requireSession(request);
   const workspaceId = workspaceFor(session, request, url);
   if (!workspaceId) throw Object.assign(new Error("Workspace belum tersedia."), { statusCode: 400 });
-  for (const handler of [handleProjects, handleAssets, handleRenderJobs, handleCollaboration, handleRecovery]) {
+  for (const handler of [handleProjects, handleQuranAudio, handleAssets, handleRenderJobs, handleCollaboration, handleRecovery]) {
     const result = await handler(request, response, url, helpers, session, workspaceId);
     if (result !== false) return result;
   }

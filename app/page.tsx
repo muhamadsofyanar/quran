@@ -1,6 +1,6 @@
 "use client";
 
-// @phase TQ-03/TQ-06/TQ-07/TQ-09/TQ-10/TQ-11/TQ-12 — independent production studio with persistent media, multilingual content, review, and rendering.
+// @phase TQ-03/TQ-06/TQ-07/TQ-09/TQ-10/TQ-11/TQ-12/TQ-13 — independent production studio with Qur'an audio automation, persistent media, multilingual content, review, and rendering.
 
 import {
   ChangeEvent,
@@ -142,6 +142,33 @@ type QuranLibraryRow = {
   arabic: string;
   meaning: string;
   ayahs: number;
+};
+
+type AudioSourceMode = "quran" | "library" | "upload";
+type QuranReciter = {
+  edition: string;
+  name: string;
+  englishName: string;
+  language: string;
+  format: "audio";
+  type?: string;
+  popular: boolean;
+  searchableText: string;
+};
+type QuranAudioJob = {
+  id: string;
+  projectId?: string;
+  edition?: string;
+  qariName?: string;
+  surahNumber?: number;
+  ayahStart?: number;
+  ayahEnd?: number;
+  status: "queued" | "downloading" | "merging" | "storing" | "complete" | "failed";
+  progress: number;
+  cacheHit?: boolean;
+  asset?: MediaAsset | null;
+  segments: Segment[];
+  error?: string | null;
 };
 
 const STORAGE_KEY = "taysriul-qurani-v0.1";
@@ -399,6 +426,18 @@ export default function Home() {
   const [audioUrl, setAudioUrl] = useState<string>();
   const [audioFile, setAudioFile] = useState<File>();
   const [audioName, setAudioName] = useState<string>();
+  const [audioSourceMode, setAudioSourceMode] = useState<AudioSourceMode>("quran");
+  const [quranReciters, setQuranReciters] = useState<QuranReciter[]>([]);
+  const [reciterQuery, setReciterQuery] = useState("");
+  const [reciterCatalogStatus, setReciterCatalogStatus] = useState<"live" | "cached" | "fallback">("fallback");
+  const [reciterWarning, setReciterWarning] = useState<string>();
+  const [selectedReciterEdition, setSelectedReciterEdition] = useState("ar.alafasy");
+  const [selectedAudioSurah, setSelectedAudioSurah] = useState(1);
+  const [quranAudioScope, setQuranAudioScope] = useState<"surah" | "range">("surah");
+  const [quranAyahStart, setQuranAyahStart] = useState(1);
+  const [quranAyahEnd, setQuranAyahEnd] = useState(7);
+  const [quranAudioJob, setQuranAudioJob] = useState<QuranAudioJob>();
+  const [quranAudioBusy, setQuranAudioBusy] = useState(false);
   const [waveformPeaks] = useState<number[]>(waveform);
   const [backgroundUrl, setBackgroundUrl] = useState<string>();
   const [backgroundFile, setBackgroundFile] = useState<File>();
@@ -453,6 +492,7 @@ export default function Home() {
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const previewStageRef = useRef<HTMLDivElement>(null);
   const mediaUploadRef = useRef<HTMLInputElement>(null);
+  const completedAudioJobsRef = useRef(new Set<string>());
   const hydrated = useRef(false);
   const serverSnapshots = useRef(new Map<string, string>());
   const contentHydrationRef = useRef(new Set<string>());
@@ -481,6 +521,21 @@ export default function Home() {
       surah.arabic.includes(quranQuery.trim()),
     );
   }, [quranQuery, quranRows]);
+  const selectedAudioSurahInfo = useMemo(
+    () => quranRows.find((surah) => surah.number === selectedAudioSurah) || quranRows[0],
+    [quranRows, selectedAudioSurah],
+  );
+  const filteredReciters = useMemo(() => {
+    const query = reciterQuery.trim().toLowerCase();
+    if (!query) return quranReciters;
+    return quranReciters.filter((reciter) => reciter.searchableText.includes(query));
+  }, [quranReciters, reciterQuery]);
+  const popularReciters = useMemo(() => filteredReciters.filter((reciter) => reciter.popular), [filteredReciters]);
+  const otherReciters = useMemo(() => filteredReciters.filter((reciter) => !reciter.popular), [filteredReciters]);
+  const quranAudioAssets = useMemo(
+    () => mediaAssets.filter((asset) => asset.kind === "audio").slice(0, 24),
+    [mediaAssets],
+  );
   const visibleContentSources = useMemo(
     () => showEnabledSourcesOnly ? contentSources.filter((source) => source.enabled && source.redistributionAllowed) : contentSources,
     [contentSources, showEnabledSourcesOnly],
@@ -538,9 +593,9 @@ export default function Home() {
     return payload.asset as MediaAsset;
   }
 
-  async function loadAudioAsset(assetId: string, quiet = false) {
+  async function loadAudioAsset(assetId: string, quiet = false, providedAsset?: MediaAsset) {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
-    const asset = mediaAssets.find((item) => item.id === assetId);
+    const asset = providedAsset || mediaAssets.find((item) => item.id === assetId);
     try {
       const streamUrl = asset?.streamUrl || `/api/v1/assets/${assetId}/download?workspace=${encodeURIComponent(session.workspaces[0].id)}&disposition=inline`;
       const response = await fetch(streamUrl, { headers: { "x-tq-workspace": session.workspaces[0].id } });
@@ -598,6 +653,91 @@ export default function Home() {
     if (asset.kind === "render-output") {
       window.open(asset.downloadUrl, "_blank", "noopener,noreferrer");
     }
+  }
+
+  async function applyCompletedQuranAudio(job: QuranAudioJob) {
+    const targetProjectId = job.projectId || activeProject?.id;
+    const targetProject = projects.find((project) => project.id === targetProjectId);
+    if (!targetProject || !job.asset || !job.segments.length || completedAudioJobsRef.current.has(job.id)) return;
+    completedAudioJobsRef.current.add(job.id);
+    try {
+      const hydratedSegments = await hydrateSegmentsContent(job.segments, translationSource, "translation", false);
+      const duration = job.asset.durationSeconds || hydratedSegments.at(-1)?.end || 0;
+      setProjects((items) => items.map((project) => project.id === targetProject.id ? {
+        ...project,
+        audioAssetId: job.asset!.id,
+        audioName: job.asset!.originalName,
+        duration,
+        segments: hydratedSegments,
+        status: "review",
+        progress: Math.max(project.progress, 55),
+        updatedAt: new Date().toISOString(),
+      } : project));
+      if (activeProject?.id === targetProject.id) {
+        setSelectedSegmentId(hydratedSegments[0].id);
+        await loadAudioAsset(job.asset.id, true, job.asset);
+        setStudioStep("sync");
+      }
+      await refreshMediaLibrary();
+      setQuranAudioBusy(false);
+      setToast(job.cacheHit
+        ? "Audio Qur'an dimuat dari cache. Periksa setiap ayat sebelum render."
+        : "Audio dan penanda ayat selesai disiapkan. Periksa setiap ayat sebelum render.");
+    } catch (error) {
+      completedAudioJobsRef.current.delete(job.id);
+      setQuranAudioBusy(false);
+      setToast(error instanceof Error ? error.message : "Hasil audio Qur'an gagal diterapkan ke proyek.");
+    }
+  }
+
+  async function startQuranAudioPreparation() {
+    if (!activeProject?.serverVersion || sessionMode !== "authenticated" || !session.workspaces?.[0]) {
+      setToast("Masuk dan buka proyek server terlebih dahulu.");
+      return;
+    }
+    if (!selectedAudioSurahInfo) {
+      setToast("Pilih surah terlebih dahulu.");
+      return;
+    }
+    if (!selectedReciterEdition) {
+      setToast("Pilih qari terlebih dahulu.");
+      return;
+    }
+    const ayahCount = selectedAudioSurahInfo.ayahs;
+    const ayahStart = quranAudioScope === "surah" ? 1 : Math.max(1, Math.min(ayahCount, quranAyahStart));
+    const ayahEnd = quranAudioScope === "surah" ? ayahCount : Math.max(ayahStart, Math.min(ayahCount, quranAyahEnd));
+    setQuranAudioBusy(true);
+    setQuranAudioJob(undefined);
+    try {
+      const response = await fetch("/api/v1/quran-audio/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-tq-workspace": session.workspaces[0].id },
+        body: JSON.stringify({
+          projectId: activeProject.id,
+          edition: selectedReciterEdition,
+          surahNumber: selectedAudioSurahInfo.number,
+          ayahStart,
+          ayahEnd,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Persiapan audio Qur'an gagal dimulai.");
+      setQuranAudioJob(payload.job as QuranAudioJob);
+      setToast(payload.job?.status === "complete" ? "Audio ditemukan di cache." : "Audio Qur'an sedang disiapkan di latar belakang.");
+    } catch (error) {
+      setQuranAudioBusy(false);
+      setToast(error instanceof Error ? error.message : "Persiapan audio Qur'an gagal dimulai.");
+    }
+  }
+
+  function quranAudioStatusLabel(job?: QuranAudioJob) {
+    if (!job) return "";
+    if (job.status === "queued") return "Menunggu worker";
+    if (job.status === "downloading") return "Mengunduh audio ayat";
+    if (job.status === "merging") return "Menggabungkan dan menghitung waktu";
+    if (job.status === "storing") return "Menyimpan ke Pustaka Media";
+    if (job.status === "complete") return job.cacheHit ? "Selesai dari cache" : "Selesai";
+    return "Gagal";
   }
 
   async function deduplicateMediaAssets() {
@@ -745,6 +885,21 @@ export default function Home() {
           .then((content) => { if (!cancelled) setContentSources(content.sources || []); })
           .catch(() => {});
 
+        void fetch("/media-api/quran/audio/reciters", { cache: "no-store" })
+          .then((catalogResponse) => catalogResponse.ok ? catalogResponse.json() : Promise.reject())
+          .then((catalog) => {
+            if (cancelled || !Array.isArray(catalog.editions)) return;
+            setQuranReciters(catalog.editions);
+            setReciterCatalogStatus(catalog.status || "fallback");
+            setReciterWarning(catalog.warning || undefined);
+            setSelectedReciterEdition((current) =>
+              catalog.editions.some((item: QuranReciter) => item.edition === current)
+                ? current
+                : catalog.editions[0]?.edition || current
+            );
+          })
+          .catch(() => setReciterWarning("Katalog qari belum dapat dimuat."));
+
         if (payload.quran?.available) {
           void fetch("/media-api/quran/surahs", { cache: "no-store" })
             .then((surahResponse) => surahResponse.ok ? surahResponse.json() : Promise.reject())
@@ -796,6 +951,58 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const ayahCount = Math.max(1, selectedAudioSurahInfo?.ayahs || 1);
+    if (quranAudioScope === "surah") {
+      setQuranAyahStart(1);
+      setQuranAyahEnd(ayahCount);
+      return;
+    }
+    setQuranAyahStart((value) => Math.max(1, Math.min(ayahCount, value)));
+    setQuranAyahEnd((value) => Math.max(1, Math.min(ayahCount, value)));
+  }, [quranAudioScope, selectedAudioSurahInfo?.ayahs]);
+
+  useEffect(() => {
+    if (!filteredReciters.length || filteredReciters.some((reciter) => reciter.edition === selectedReciterEdition)) return;
+    setSelectedReciterEdition(filteredReciters[0].edition);
+  }, [filteredReciters, selectedReciterEdition]);
+
+  useEffect(() => {
+    if (!quranAudioJob) return;
+    if (quranAudioJob.status === "complete") {
+      void applyCompletedQuranAudio(quranAudioJob);
+      return;
+    }
+    if (quranAudioJob.status === "failed") {
+      setQuranAudioBusy(false);
+      setToast(quranAudioJob.error || "Persiapan audio gagal. Pilih qari lain atau coba kembali.");
+      return;
+    }
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/v1/quran-audio/jobs/${quranAudioJob.id}`, {
+          headers: { "x-tq-workspace": session.workspaces![0].id },
+          cache: "no-store",
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Status audio tidak dapat dimuat.");
+        if (active) setQuranAudioJob(payload.job as QuranAudioJob);
+      } catch (error) {
+        if (active) setToast(error instanceof Error ? error.message : "Status audio tidak dapat dimuat.");
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  // applyCompletedQuranAudio intentionally runs only when the durable job changes state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quranAudioJob?.id, quranAudioJob?.status, session, sessionMode]);
+
+  useEffect(() => {
     if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
     let cancelled = false;
 
@@ -825,6 +1032,24 @@ export default function Home() {
 
     return () => { cancelled = true; };
   }, [session, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !activeProject?.serverVersion) return;
+    let cancelled = false;
+    fetch(`/api/v1/quran-audio/jobs?projectId=${encodeURIComponent(activeProject.id)}`, {
+      headers: { "x-tq-workspace": session.workspaces[0].id },
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Pekerjaan audio tidak dapat dipulihkan.");
+        if (cancelled || !payload.job) return;
+        setQuranAudioJob(payload.job as QuranAudioJob);
+        setQuranAudioBusy(["queued", "downloading", "merging", "storing"].includes(payload.job.status));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeProject?.id, activeProject?.serverVersion, session, sessionMode]);
 
   useEffect(() => {
     if (!hydrated.current) return;
@@ -1577,12 +1802,12 @@ export default function Home() {
       const duration = Math.max(0.1, captureEnd - captureStart);
       const backgroundImage = backgroundUrl && backgroundFile?.type.startsWith("image/") ? new Image() : null;
       if (backgroundImage) {
-        backgroundImage.src = backgroundUrl;
+        backgroundImage.src = backgroundUrl || "";
         await backgroundImage.decode();
       }
       const backgroundVideo = backgroundUrl && backgroundFile?.type.startsWith("video/") ? document.createElement("video") : null;
       if (backgroundVideo) {
-        backgroundVideo.src = backgroundUrl;
+        backgroundVideo.src = backgroundUrl || "";
         backgroundVideo.muted = true;
         backgroundVideo.loop = true;
         backgroundVideo.playsInline = true;
@@ -2086,27 +2311,64 @@ export default function Home() {
 
             <div className="studio-workspace">
               <aside className="source-panel panel">
-                <div className="panel-heading"><div><span className="panel-kicker">Sumber media</span><h2>Audio bacaan</h2></div><button className="icon-button small" aria-label="Pilihan sumber" onClick={() => setToast("Sumber aktif: audio/video lokal yang diunggah ke ruang kerja server.")}><Icon name="more" /></button></div>
+                <div className="panel-heading"><div><span className="panel-kicker">Sumber media</span><h2>Audio bacaan</h2></div><button className="icon-button small" aria-label="Informasi sumber" onClick={() => setToast("Pilih audio otomatis dari Sumber Qur'an, Pustaka Media, atau unggah manual.")}><Icon name="more" /></button></div>
                 <input ref={fileInputRef} type="file" accept="audio/*,video/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => processAudio(event.target.files?.[0])} />
-                <div
-                  className={`drop-zone ${isDragging ? "dragging" : ""} ${audioName ? "has-file" : ""}`}
-                  onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={handleDrop}
-                >
-                  <span className="upload-icon"><Icon name={audioName ? "audio" : "upload"} size={22} /></span>
-                  {audioName ? <><strong>{audioName}</strong><small>Siap diputar dari perangkat ini</small><button onClick={() => fileInputRef.current?.click()}>Ganti berkas</button></> : <><strong>Letakkan audio di sini</strong><small>MP3, WAV, M4A, MP4 • maks. 500 MB</small><button onClick={() => fileInputRef.current?.click()}>Pilih berkas</button></>}
+                <div className="source-mode-tabs" role="tablist" aria-label="Pilih sumber audio">
+                  <button className={audioSourceMode === "quran" ? "active" : ""} onClick={() => setAudioSourceMode("quran")}><Icon name="book" size={13}/> Sumber Qur&apos;an</button>
+                  <button className={audioSourceMode === "library" ? "active" : ""} onClick={() => setAudioSourceMode("library")}><Icon name="layers" size={13}/> Pustaka</button>
+                  <button className={audioSourceMode === "upload" ? "active" : ""} onClick={() => setAudioSourceMode("upload")}><Icon name="upload" size={13}/> Unggah</button>
                 </div>
+
+                {audioSourceMode === "quran" && <div className="quran-audio-form">
+                  <div className="catalog-badge-row"><span className={`catalog-badge ${reciterCatalogStatus}`}>{reciterCatalogStatus === "live" ? "Katalog langsung" : reciterCatalogStatus === "cached" ? "Katalog tersimpan" : "Katalog cadangan"}</span><small>{quranReciters.length} pilihan qari</small></div>
+                  {reciterWarning && <p className="source-warning">{reciterWarning}</p>}
+                  <label><span>Cari qari</span><input value={reciterQuery} onChange={(event) => setReciterQuery(event.target.value)} placeholder="Nama Latin, Arab, atau kode edisi" /></label>
+                  <label><span>Qari</span><select value={selectedReciterEdition} onChange={(event) => setSelectedReciterEdition(event.target.value)} disabled={!filteredReciters.length}>
+                    {popularReciters.length > 0 && <optgroup label="Qari populer">{popularReciters.map((reciter) => <option key={reciter.edition} value={reciter.edition}>{reciter.englishName || reciter.name} · {reciter.edition}</option>)}</optgroup>}
+                    {otherReciters.length > 0 && <optgroup label="Qari lainnya">{otherReciters.map((reciter) => <option key={reciter.edition} value={reciter.edition}>{reciter.englishName || reciter.name} · {reciter.edition}</option>)}</optgroup>}
+                  </select></label>
+                  {filteredReciters.length === 0 && <p className="source-warning">Qari tidak ditemukan. Hapus atau ubah kata pencarian.</p>}
+                  <label><span>Surah</span><select value={selectedAudioSurah} onChange={(event) => setSelectedAudioSurah(Number(event.target.value))}>{quranRows.map((surah) => <option key={surah.number} value={surah.number}>{surah.number}. {surah.name} · {surah.ayahs} ayat</option>)}</select></label>
+                  <div className="audio-scope-toggle" role="group" aria-label="Cakupan ayat">
+                    <button className={quranAudioScope === "surah" ? "active" : ""} onClick={() => setQuranAudioScope("surah")}>Seluruh surah</button>
+                    <button className={quranAudioScope === "range" ? "active" : ""} onClick={() => setQuranAudioScope("range")}>Rentang ayat</button>
+                  </div>
+                  {quranAudioScope === "range" && <div className="ayah-range">
+                    <label><span>Ayat awal</span><input type="number" min={1} max={selectedAudioSurahInfo?.ayahs || 1} value={quranAyahStart} onChange={(event) => setQuranAyahStart(Number(event.target.value))}/></label>
+                    <label><span>Ayat akhir</span><input type="number" min={quranAyahStart} max={selectedAudioSurahInfo?.ayahs || 1} value={quranAyahEnd} onChange={(event) => setQuranAyahEnd(Number(event.target.value))}/></label>
+                  </div>}
+                  <button className="ai-action quran-prepare" onClick={() => void startQuranAudioPreparation()} disabled={quranAudioBusy || !filteredReciters.length || !capabilities.quran.available}>
+                    <span><Icon name="spark" /></span><div><strong>{quranAudioBusy ? quranAudioStatusLabel(quranAudioJob) || "Menyiapkan audio…" : "Siapkan audio dan ayat"}</strong><small>Tanpa Explorer • tanpa transkripsi Whisper</small></div><Icon name="chevron" size={16} />
+                  </button>
+                  {quranAudioJob && <div className={`audio-job-progress ${quranAudioJob.status}`}><div><span>{quranAudioStatusLabel(quranAudioJob)}</span><strong>{quranAudioJob.progress}%</strong></div><progress max={100} value={quranAudioJob.progress}/>{quranAudioJob.error && <small>{quranAudioJob.error}</small>}</div>}
+                  <p className="source-attribution compact">Audio: Al Quran Cloud / Islamic Network. Hasil disimpan otomatis ke Pustaka Media.</p>
+                  {audioName && <div className="current-audio"><Icon name="audio" size={15}/><div><strong>Audio proyek aktif</strong><small>{audioName}</small></div></div>}
+                </div>}
+
+                {audioSourceMode === "library" && <div className="source-library">
+                  <div className="source-library-head"><strong>Audio tersimpan</strong><button onClick={() => void refreshMediaLibrary()}>Muat ulang</button></div>
+                  {quranAudioAssets.length ? quranAudioAssets.map((asset) => <button className="source-library-item" key={asset.id} onClick={() => void applyMediaAsset(asset)}><Icon name="audio" size={14}/><span><strong>{asset.originalName}</strong><small>{asset.qari || "Qari belum dicatat"}{asset.surahNumber ? ` · QS ${asset.surahNumber}` : ""}</small></span><Icon name="chevron" size={13}/></button>) : <div className="source-library-empty"><p>Belum ada audio di Pustaka Media.</p><button onClick={() => setAudioSourceMode("quran")}>Ambil dari Sumber Qur&apos;an</button></div>}
+                </div>}
+
+                {audioSourceMode === "upload" && <>
+                  <div
+                    className={`drop-zone ${isDragging ? "dragging" : ""} ${audioName ? "has-file" : ""}`}
+                    onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleDrop}
+                  >
+                    <span className="upload-icon"><Icon name={audioName ? "audio" : "upload"} size={22} /></span>
+                    {audioName ? <><strong>{audioName}</strong><small>Siap diputar dari perangkat ini</small><button onClick={() => fileInputRef.current?.click()}>Ganti berkas</button></> : <><strong>Letakkan audio di sini</strong><small>MP3, WAV, M4A, MP4 • maks. 500 MB</small><button onClick={() => fileInputRef.current?.click()}>Pilih berkas</button></>}
+                  </div>
+                  <button className="ai-action" onClick={runLocalAnalysis} disabled={isTranscribing}><span><Icon name="spark" /></span><div><strong>{isTranscribing ? "Menganalisis bacaan…" : "Transkripsi & cocokkan ayat"}</strong><small>{capabilities.transcription ? "AI aktif" : "Perlu endpoint AI"} • {capabilities.quran.available ? "korpus siap" : "korpus belum sinkron"}</small></div><Icon name="chevron" size={16} /></button>
+                  <div className="source-settings">
+                    <label><span>Bahasa audio</span><select defaultValue="Arabic"><option>Arab (Al-Qur&apos;an)</option></select></label>
+                    <label><span>Model pencocokan</span><select defaultValue="Quran"><option>Qur&apos;an matcher • n-gram Arab</option></select></label>
+                  </div>
+                  {transcript && <div className="transcript-note"><strong>Transkripsi terakhir</strong><p dir="rtl">{transcript}</p></div>}
+                </>}
                 <audio ref={audioRef} src={audioUrl} onLoadedMetadata={handleAudioMetadata} onTimeUpdate={handleAudioTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => { setIsPlaying(false); setPlayheadTime(activeProject.duration || 0); }} />
-                <button className="ai-action" onClick={runLocalAnalysis} disabled={isTranscribing}><span><Icon name="spark" /></span><div><strong>{isTranscribing ? "Menganalisis bacaan…" : "Transkripsi & cocokkan ayat"}</strong><small>{capabilities.transcription ? "AI aktif" : "Perlu endpoint AI"} • {capabilities.quran.available ? "korpus siap" : "korpus belum sinkron"}</small></div><Icon name="chevron" size={16} /></button>
-
-                <div className="source-settings">
-                  <label><span>Bahasa audio</span><select defaultValue="Arabic"><option>Arab (Al-Qur&apos;an)</option></select></label>
-                  <label><span>Model pencocokan</span><select defaultValue="Quran"><option>Qur&apos;an matcher • n-gram Arab</option></select></label>
-                </div>
-
-                {transcript && <div className="transcript-note"><strong>Transkripsi terakhir</strong><p dir="rtl">{transcript}</p></div>}
 
                 <div className="segments-heading"><span>Potongan ayat</span><div><em>{activeProject.segments.length}</em><button onClick={addManualSegment} aria-label="Tambah potongan ayat"><Icon name="plus" size={14}/></button></div></div>
                 <div className="segment-list">
@@ -2283,7 +2545,7 @@ export default function Home() {
 
               <section className="settings-content panel">
                 {settingsTab === "identity" && <>
-                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.2.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
+                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.3.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
                   {sessionMode === "authenticated" && <div className="settings-section"><span className="section-kicker">Kolaborasi</span><h2>Anggota workspace</h2><p>Editor mengubah proyek, pemeriksa memberi komentar dan persetujuan, sedangkan viewer hanya membaca.</p><div className="member-list">{members.map((member) => <div key={member.id}><span>{member.display_name?.slice(0,2).toUpperCase() || "U"}</span><div><strong>{member.display_name}</strong><small>{member.email}</small></div><em>{member.role}</em></div>)}</div>{session.workspaces?.[0]?.role === "owner" && <form className="member-form" onSubmit={addWorkspaceMember}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="Email pengguna yang sudah terdaftar"/><select value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "reviewer" | "viewer")}><option value="editor">Editor</option><option value="reviewer">Pemeriksa</option><option value="viewer">Viewer</option></select><button className="primary-button"><Icon name="plus"/> Tambahkan</button></form>}</div>}
                 </>}
 

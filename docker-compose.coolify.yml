@@ -41,6 +41,13 @@ services:
       TQ_QURAN_CONTENT_SOURCES_JSON: "${TQ_QURAN_CONTENT_SOURCES_JSON:-}"
       TQ_QURANENC_DISCOVERY: "${TQ_QURANENC_DISCOVERY:-true}"
       TQ_CONTENT_CACHE_SECONDS: "${TQ_CONTENT_CACHE_SECONDS:-604800}"
+      TQ_QURAN_AUDIO_PROVIDER: "${TQ_QURAN_AUDIO_PROVIDER:-alquran.cloud}"
+      TQ_QURAN_AUDIO_API_URL: "${TQ_QURAN_AUDIO_API_URL:-https://api.alquran.cloud/v1}"
+      TQ_QURAN_AUDIO_CDN_URL: "${TQ_QURAN_AUDIO_CDN_URL:-https://cdn.islamic.network/quran/audio}"
+      TQ_QURAN_AUDIO_CATALOG_SECONDS: "${TQ_QURAN_AUDIO_CATALOG_SECONDS:-21600}"
+      TQ_QURAN_AUDIO_DOWNLOAD_CONCURRENCY: "${TQ_QURAN_AUDIO_DOWNLOAD_CONCURRENCY:-4}"
+      TQ_QURAN_AUDIO_JOB_ATTEMPTS: "${TQ_QURAN_AUDIO_JOB_ATTEMPTS:-3}"
+      TQ_QURAN_AUDIO_MAX_BYTES: "${TQ_QURAN_AUDIO_MAX_BYTES:-536870912}"
 
       TQ_TRANSCRIBE_URL: "http://transcriber:8000/v1/audio/transcriptions"
       TQ_TRANSCRIBE_MODEL: "${WHISPER_MODEL:-small}"
@@ -105,6 +112,38 @@ services:
 
     # Worker tidak membuka port 3000.
     # Nonaktifkan healthcheck bawaan dari image app.
+    healthcheck:
+      disable: true
+
+
+  audio-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    command:
+      - node
+      - server/quran-audio-worker.mjs
+
+    environment:
+      <<: *app-environment
+      TQ_QURAN_AUDIO_WORKER_CONCURRENCY: "${TQ_QURAN_AUDIO_WORKER_CONCURRENCY:-1}"
+      TQ_QURAN_AUDIO_DOWNLOAD_CONCURRENCY: "${TQ_QURAN_AUDIO_DOWNLOAD_CONCURRENCY:-4}"
+      TQ_QURAN_AUDIO_JOB_ATTEMPTS: "${TQ_QURAN_AUDIO_JOB_ATTEMPTS:-3}"
+      TQ_QURAN_AUDIO_MAX_BYTES: "${TQ_QURAN_AUDIO_MAX_BYTES:-536870912}"
+
+    volumes:
+      - tq-data:/app/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
     healthcheck:
       disable: true
 

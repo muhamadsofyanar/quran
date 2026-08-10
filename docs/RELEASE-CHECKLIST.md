@@ -1,4 +1,4 @@
-# Checklist Rilis v1.2.0
+# Checklist Rilis v1.3.0
 
 ## Mesin dasar
 
@@ -40,7 +40,7 @@
 - [x] Audit append-only dan security headers.
 - [x] File signature, size guard, dan rate limit upload.
 - [x] Dokumentasi GitHub/Coolify/operasi.
-- [x] Preflight TQ-12.
+- [x] Preflight TQ-13.
 
 ## Validasi setelah satu deploy
 

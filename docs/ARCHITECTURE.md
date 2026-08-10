@@ -59,3 +59,13 @@ Alur konten:
 `Studio → media-api content/batch → source registry → QuranEnc catalog/source → per-surah cache → project segments → render/subtitle`
 
 Katalog QuranEnc ditemukan saat runtime, sedangkan tiga sumber Indonesia dipin sebagai preferred fallback. Teks sumber, versi, dan atribusi dibawa sampai layer preview/render.
+
+## v1.3.0 — katalog audio qari dan cache otomatis
+
+Alur audio otomatis:
+
+`Studio → API pekerjaan → Redis/BullMQ → audio-worker → Al Quran Cloud/CDN → cache ayat TQ_DATA_DIR → FFprobe/FFmpeg → MinIO → aset+marker → Studio`
+
+Katalog qari ditemukan secara dinamis dan disimpan selama enam jam. Qari populer hanya memengaruhi urutan; seluruh edisi audio valid tetap dapat dicari. Pekerjaan panjang diproses oleh service `audio-worker`, sementara status dan progres tersimpan di PostgreSQL sehingga pengguna dapat menutup halaman tanpa membatalkan pekerjaan.
+
+Cache bekerja pada dua lapis: MP3 per ayat disimpan pada volume `tq-data`, sedangkan hasil gabungan per workspace disimpan sebagai aset MinIO dengan `sourceKey` deterministik. Marker waktu dihitung dari durasi audio per ayat, bukan hasil transkripsi.

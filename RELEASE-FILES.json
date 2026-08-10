@@ -1,8 +1,8 @@
 {
-  "release": "1.2.1-font-render-ci-verify-hotfix",
-  "phase": "TQ-12",
-  "generated_at": "2026-08-10T14:25:00+07:00",
-  "file_count": 72,
+  "release": "1.3.0-quran-audio-catalog",
+  "phase": "TQ-13",
+  "generated_at": "2026-08-10T16:55:52.593Z",
+  "file_count": 79,
   "files": [
     {
       "path": ".dockerignore",
@@ -11,8 +11,8 @@
     },
     {
       "path": ".env.example",
-      "size": 2343,
-      "sha256": "c9373b50f3d01c9e3929cb328af5d2c53bd584bf472a2727fb6ceeac533ceb1d"
+      "size": 2755,
+      "sha256": "701cd59ee08fa297806861238bbcb3373af671558bcf704cc612f2e9dfb9e9f6"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -36,18 +36,18 @@
     },
     {
       "path": "PHASE-MANIFEST.json",
-      "size": 4693,
-      "sha256": "b547693b38adb4c584e3d95743ec4d814805891d91084ee107f492563fa98240"
+      "size": 5515,
+      "sha256": "8737438a6cbd2b1489bb3df4a9411d29f951af4e4507de58551fb2728ce5dbba"
     },
     {
       "path": "README.md",
-      "size": 4078,
-      "sha256": "b9e471fdbe65a754b82bc7d0b6c3472cac955fd3d8c4f21d2e7feceedf3b56ff"
+      "size": 4991,
+      "sha256": "7e1b3bd923ed0a7b710eb61621dc66fc824d21e8fe2bbd5e8d1fb4041559e8d3"
     },
     {
       "path": "app/api/health/route.ts",
       "size": 225,
-      "sha256": "69c85bedd58d957a520da95a24fc7d36b73f8bd9a266fcef8d0325fc4ecd830d"
+      "sha256": "487ab9986b186e6da88409e7027d719f6407f66e4d13dccead449ba8c1acbf26"
     },
     {
       "path": "app/chatgpt-auth.ts",
@@ -56,8 +56,8 @@
     },
     {
       "path": "app/globals.css",
-      "size": 71134,
-      "sha256": "d0d9036c0698e68a24dcd313e8db126fcc0f862873a916f517fdb0e8e76d407c"
+      "size": 75644,
+      "sha256": "e5e570e6f692e28aa6a4f43c1def424489e55ba01dc984d95565798c26f10305"
     },
     {
       "path": "app/layout.tsx",
@@ -71,8 +71,8 @@
     },
     {
       "path": "app/page.tsx",
-      "size": 154208,
-      "sha256": "287750daa95d8de0f1f830eb61af73095d7f9eecff0d714598170f226413fe1a"
+      "size": 169906,
+      "sha256": "6a201a58c6cdf7dbbbffa8c7ae801d0f7ef3cac64c3ad96acb770b9b6d19a0a5"
     },
     {
       "path": "build/sites-vite-plugin.ts",
@@ -81,23 +81,23 @@
     },
     {
       "path": "docker-compose.coolify.yml",
-      "size": 5417,
-      "sha256": "89004732ac66ae2b3103b5fe99db7723df5f727d30987b4b82c154d51736f930"
+      "size": 6760,
+      "sha256": "3f473cefe45b30f734d57458543611c0a7154d1513b95cdddd64548e6bed8373"
     },
     {
       "path": "docs/ARCHITECTURE.md",
-      "size": 3281,
-      "sha256": "3ec62383f5b6e4957d267fcd344ba24810cd239bdac1be9cf970b5f0623f2773"
+      "size": 4108,
+      "sha256": "7a2ee594b83384f267ed44eebbea7aeadab19fc8eea87d5f34770c990b18cd41"
     },
     {
       "path": "docs/COOLIFY.md",
-      "size": 3099,
-      "sha256": "b2ef9a23132b04353c1fa4daac498e0d2df46b17e8fa46d311848c137c62bf63"
+      "size": 3189,
+      "sha256": "0fdc2f3b88aba0ae74d7b5384508734fb19e894fcee0de09d30652713042227f"
     },
     {
       "path": "docs/FUNCTION-MATRIX.md",
-      "size": 1893,
-      "sha256": "b699ffbfabd27d0fac7a166eb52a810ed18e07f7f185f2f902f0522342da8203"
+      "size": 2230,
+      "sha256": "c9050b62151445cfd378a31ef9266c4c50c2ab28427cf73440e08680e4fe141d"
     },
     {
       "path": "docs/HOTFIX-font-render-v1.2.1.md",
@@ -116,18 +116,18 @@
     },
     {
       "path": "docs/OPERATIONS.md",
-      "size": 3784,
-      "sha256": "9b71618a843bef9da5c511b25635c7d4207b055cdf0777ceb64efbe1d6caf02c"
+      "size": 4382,
+      "sha256": "6e8c2cdb7a030f1d679ba925f908f7a9486c06fa0230094a6e28840cae6ac889"
     },
     {
       "path": "docs/RELEASE-CHECKLIST.md",
       "size": 1989,
-      "sha256": "617e72429ca037bd521c5f5c50a243acbbbca402b59026c3270e956d8bde9752"
+      "sha256": "7e91e7176da5b3f08f8ce7dbfccd269ed8ba443bf36fa76cc4785b35366c8cc8"
     },
     {
       "path": "docs/ROADMAP.md",
-      "size": 1039,
-      "sha256": "a38fc0ff4960430c1e4bc948f2368e01bd6e5c36f034d73b18517292405f971f"
+      "size": 1229,
+      "sha256": "592b87d847cefdcf7b1019b84b866f358e7bf55306874e6514c3d9a6e4c66085"
     },
     {
       "path": "docs/SECURITY.md",
@@ -136,8 +136,8 @@
     },
     {
       "path": "docs/SOURCES.md",
-      "size": 2044,
-      "sha256": "c5185a69e2777025fa4eb1f07080131334ec454ae007f4cd5849b6bfaa8a390e"
+      "size": 2849,
+      "sha256": "d5b4499835aeeab939803b6613fa823e85242f53fa5996a25a3fee11bbb8d412"
     },
     {
       "path": "docs/UPDATE-v1.1.0.md",
@@ -150,6 +150,11 @@
       "sha256": "b70f26b8e7aa2899ba1e299b5662e1418240d41eb3e335d8ab75219f622207eb"
     },
     {
+      "path": "docs/UPDATE-v1.3.0.md",
+      "size": 1187,
+      "sha256": "a2605c6f93bcaa5f0c77860a71e5184fcf9801b8f757d07dc5fd805e1275624d"
+    },
+    {
       "path": "docs/VERIFICATION-v1.1.0.md",
       "size": 1746,
       "sha256": "3055bd7c8c30f0185afc2eeeab762a250790d6724f5d0020b87931192b53c32c"
@@ -158,6 +163,11 @@
       "path": "docs/VERIFICATION-v1.2.0.md",
       "size": 1244,
       "sha256": "8e420a3c1fd69c11ab98b18a17e76d3c243904ec666cb6ec0bb0058b9c73a926"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-10-quran-audio-catalog.md",
+      "size": 6746,
+      "sha256": "de047b4b1af0c33eee932ca1700d90afc6c6d012a6e1aca67daf58adc4f57770"
     },
     {
       "path": "eslint.config.mjs",
@@ -182,12 +192,12 @@
     {
       "path": "package-lock.json",
       "size": 361711,
-      "sha256": "9dbe7e2f0ba86a4ce6b43d28f73f6110d65c16d90ea6f528aefecf838a535004"
+      "sha256": "9e94d8d076006da45a27120238a99ca7ee7f332753415ef268ccfcbba785a11e"
     },
     {
       "path": "package.json",
       "size": 1587,
-      "sha256": "d7ebf95bb9c1e460290538e7b2009df938a0c81c981938f67222942176539713"
+      "sha256": "6d86ecbeb238104c7e8c62f75be697d7feeb2922a5732d8d31450098ed2557bf"
     },
     {
       "path": "postcss.config.mjs",
@@ -216,8 +226,8 @@
     },
     {
       "path": "scripts/build-verified.sh",
-      "size": 699,
-      "sha256": "f7d8b0b181010ed37633337442115ca282cfdc8f9b0b58db347d7f4e83251b35"
+      "size": 714,
+      "sha256": "19eacd69e45a543e2cc33ea410eb3a4c2ebae9497e6c5c67133e4b6bdb0c05f1"
     },
     {
       "path": "scripts/install-ci.sh",
@@ -226,13 +236,13 @@
     },
     {
       "path": "scripts/preflight.mjs",
-      "size": 2663,
-      "sha256": "621152ee272852f94f02ec1c74f057ab2a6f240a2d878b676f57e28080a32568"
+      "size": 3155,
+      "sha256": "744747f41f5a010b74c00cb4ea0840d70a149ce6ad87db6c85f13488101da5ee"
     },
     {
       "path": "scripts/runtime-smoke.mjs",
       "size": 3038,
-      "sha256": "160d7cdf60611a2357321958930c066b070c7e1e4f1889fe9ab99361a82f5ab3"
+      "sha256": "67a9b3ed9f6560f49fd811b4d9d145d0b716f0ecffca6a163fd499fe6a1e9a35"
     },
     {
       "path": "scripts/sites-env.sh",
@@ -246,8 +256,8 @@
     },
     {
       "path": "scripts/validate-artifact.sh",
-      "size": 1377,
-      "sha256": "26a699e4a716e11266e6684e5950c96d333c34155b2cfec71b2ec881074b1047"
+      "size": 1387,
+      "sha256": "a5ba57286e9e60369535acc8b82417edbec72deded924d8ad9a48a8ff09f3352"
     },
     {
       "path": "server/auth.mjs",
@@ -261,8 +271,8 @@
     },
     {
       "path": "server/index.mjs",
-      "size": 22848,
-      "sha256": "0127214e8e98ae5dbfdd16390596a9ed1881e01230a0238d9e038f68cb818631"
+      "size": 23106,
+      "sha256": "bfff04af4595f697a32a42a3cbbe19069aa8cb1c14262334880a78ede5926877"
     },
     {
       "path": "server/migrations/001-production.sql",
@@ -280,9 +290,29 @@
       "sha256": "44358af22d27463f7d6ec7f930510ff6d8198f3434dacdd870f1747bb9e16c96"
     },
     {
+      "path": "server/migrations/004-quran-audio-jobs.sql",
+      "size": 1960,
+      "sha256": "27c5efdd3ab84986d9a78cc47f12eeeac489db7f84e2951cbb17933a26fc7bd7"
+    },
+    {
       "path": "server/platform-api.mjs",
-      "size": 43107,
-      "sha256": "0e7de35385965bb7ca03d829ca11885ba98f125c8dff5fe5f2c23099b7dbabac"
+      "size": 50496,
+      "sha256": "62aebf213402ee4b8c8351b6ea8eebf8cedc40989ab0f23cb799f01ba7c2221d"
+    },
+    {
+      "path": "server/quran-audio-queue.mjs",
+      "size": 955,
+      "sha256": "02acf8da3bfc0e6f53ba073ee2af3b4a6508fb664791e677793f57c7b27a5ef7"
+    },
+    {
+      "path": "server/quran-audio-worker.mjs",
+      "size": 6668,
+      "sha256": "71f171cd94ca1624291311e619f156811deee2eadad85593d56e3aeff4f1fb3a"
+    },
+    {
+      "path": "server/quran-audio.mjs",
+      "size": 18021,
+      "sha256": "07315bf690fa2c6ccf7397296fb408311f516ed8175d6cd3be99168b2e1144e1"
     },
     {
       "path": "server/quran-store.mjs",
@@ -317,7 +347,7 @@
     {
       "path": "services/transcriber/app.py",
       "size": 4083,
-      "sha256": "9b0f705ce7f66d5a3efe37a85648bbfaefc64e1c754f54b3428aafb9ba91235a"
+      "sha256": "0099502d28b0e9dbf685e60225866470f651f60ccfb49347d1ec83b839ce87e0"
     },
     {
       "path": "services/transcriber/requirements.txt",
@@ -331,8 +361,8 @@
     },
     {
       "path": "tests/deployment.test.mjs",
-      "size": 4336,
-      "sha256": "5cba0993a20b164e7676288c055051528ddc8f097d33af32647604d6daef64cf"
+      "size": 5517,
+      "sha256": "9b14ecbc648e5548a4deb16fb4215a21a569535d14bb9e2728463ea894231400"
     },
     {
       "path": "tests/media-core.test.mjs",
@@ -341,13 +371,18 @@
     },
     {
       "path": "tests/production-core.test.mjs",
-      "size": 5683,
-      "sha256": "6c6823213ac80fa92b47a8ba418279d605f2e4703082346eb62babc1f11a8033"
+      "size": 5693,
+      "sha256": "a742f05b9b36f27b70a4988f3934bd58cf7e54002f1ae3a364c54a820610fe51"
+    },
+    {
+      "path": "tests/quran-audio.test.mjs",
+      "size": 7934,
+      "sha256": "a2d2574d2e1a934081a86e56c550034f8ef1c08e497b16eadeb99b84c04a49c7"
     },
     {
       "path": "tests/rendered-html.test.mjs",
-      "size": 2348,
-      "sha256": "8e80ddc3838fc56087ee292897aa9d82243415f42f10000a579fb18ccf7e2bda"
+      "size": 2441,
+      "sha256": "e24349630d2d577ba793acfda62712e34d07c4149302b582b70dd09054609dce"
     },
     {
       "path": "tsconfig.json",

@@ -11,6 +11,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { databaseStatus, migrateDatabase } from "./database.mjs";
 import { handlePlatformApi } from "./platform-api.mjs";
+import { listAudioEditions } from "./quran-audio.mjs";
 import { queueStatus } from "./render-queue.mjs";
 import {
   alignAgainstCorpus,
@@ -670,7 +671,7 @@ async function handleMediaApi(
           "taysriul-qurani",
 
         version:
-          "1.2.0",
+          "1.3.0",
 
         ffmpeg:
           ffmpegAvailable,
@@ -734,7 +735,7 @@ async function handleMediaApi(
           database.healthy,
 
         version:
-          "1.2.0",
+          "1.3.0",
       }
     );
   }
@@ -770,6 +771,15 @@ async function handleMediaApi(
       200,
       await corpusStatus()
     );
+  }
+
+  if (
+    url.pathname ===
+      "/media-api/quran/audio/reciters" &&
+    request.method === "GET"
+  ) {
+    const catalog = await listAudioEditions();
+    return sendJson(response, 200, catalog);
   }
 
   if (

@@ -1,6 +1,6 @@
 # Panduan GitHub Manual dan Coolify
 
-Ikuti urutan ini setelah ZIP v1.2.0 diterima.
+Ikuti urutan ini setelah ZIP v1.3.0 diterima.
 
 ## 0–20% — Siapkan GitHub
 
@@ -58,8 +58,9 @@ Jangan menyalin contoh `replace-with...` dari `.env.example` sebagai nilai produ
 
 1. Tekan **Deploy**.
 2. Tunggu semua service sehat. Unduhan model AI pertama dapat membuat transcriber lebih lama siap.
-3. Buka `/media-api/health`. Hasil harus `ok: true`, versi `1.2.0`, `ffmpeg: true`, database sehat, storage sehat, dan queue sehat.
-4. Buka aplikasi, buat akun pemilik pertama, lalu ubah `TQ_ALLOW_SIGNUP=false` bila aplikasi belum dibuka untuk umum.
+3. Buka `/media-api/health`. Hasil harus `ok: true`, versi `1.3.0`, `ffmpeg: true`, database sehat, storage sehat, dan queue sehat.
+4. Pastikan service `audio-worker` running dan migration terakhir `004-quran-audio-jobs`.
+5. Buka aplikasi, buat akun pemilik pertama, lalu ubah `TQ_ALLOW_SIGNUP=false` bila aplikasi belum dibuka untuk umum.
 
 ## 90–100% — Uji nyata
 

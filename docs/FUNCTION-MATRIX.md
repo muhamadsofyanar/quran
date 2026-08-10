@@ -1,9 +1,13 @@
-# Matriks Fungsi v1.2.0
+# Matriks Fungsi v1.3.0
 
 | Fungsi produksi | Implementasi | Status source |
 |---|---|---|
 | Audio satu surah | Pustaka Media + marker ayat non-destruktif | Siap |
 | Audio per ayat | `scope=ayah`, konvensi nama, reuse asset | Siap |
+| Katalog qari | katalog hidup, pencarian Latin/Arab/identifier, popular-first | Siap |
+| Audio otomatis | pilih qari + surah/rentang tanpa Explorer/Whisper | Siap |
+| Cache audio | cache MP3 ayat lokal + hasil gabungan MinIO per workspace | Siap |
+| Worker audio | BullMQ terpisah, progress, retry, idempotensi sourceKey | Siap |
 | Pustaka Media | list/search/filter/reuse/archive/stream/dedupe | Siap |
 | Persistensi media | PostgreSQL metadata + MinIO/S3/local object | Siap |
 | Reload media proyek | `audioAssetId`/`backgroundAssetId` dimuat kembali via same-origin | Siap |
@@ -27,5 +31,5 @@
 | Kolaborasi | owner/editor/reviewer/viewer | Siap |
 | Audit/approval | komentar waktu, approval, append-only audit | Siap |
 | Backup | project/review/media/render manifest | Siap |
-| Migration | 001 + 002 + 003 berurutan dan idempotent | Siap |
+| Migration | 001 + 002 + 003 + 004 berurutan dan idempotent | Siap |
 | Hardening upload | MIME + magic signature + size + rate limit + dedupe | Siap |

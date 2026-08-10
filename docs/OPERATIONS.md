@@ -70,3 +70,11 @@ Startup menjalankan semua file `server/migrations/*.sql` secara berurutan. Datab
 - QuranEnc diambil on-demand per surah. Gangguan upstream tidak merusak korpus Arab atau media; konten yang sudah dicache tetap dapat digunakan selama cache valid.
 - Default cache konten 7 hari dan discovery katalog 6 jam. Perubahan katalog tidak memerlukan redeploy.
 - Setelah source translation/tafsir otomatis dipilih, textarea dibuat read-only. Untuk koreksi editorial lokal gunakan `Teks manual`, bukan mengubah teks sumber.
+
+## Operasi v1.3.0 — TQ-13
+
+- Service `audio-worker` memproses antrean `tq-quran-audio` dan tidak membuka port publik.
+- Cache MP3 per ayat berada di volume `tq-data`; hasil gabungan berada di MinIO; status pekerjaan berada di PostgreSQL.
+- Jika katalog langsung gagal, aplikasi memakai katalog disk atau fallback tanpa menjatuhkan health aplikasi utama.
+- Migration `004-quran-audio-jobs` berjalan otomatis. Jangan menghapus volume `tq-data` bila ingin mempertahankan cache unduhan.
+- Pekerjaan dapat dipulihkan saat proyek dibuka kembali melalui status pekerjaan terbaru untuk proyek tersebut.

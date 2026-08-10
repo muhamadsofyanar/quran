@@ -14,9 +14,36 @@ test("Coolify stack includes durable data, queue, AI, and isolated renderer", as
   assert.match(compose, /postgres:17\.10-alpine3\.24/);
   assert.match(compose, /redis:7\.4\.10-alpine/);
   assert.match(compose, /render-worker:/);
+  assert.match(compose, /audio-worker:/);
   assert.match(compose, /tq-postgres:/);
   assert.match(compose, /tq-redis:/);
   assert.match(compose, /tq-minio:/);
+});
+
+test("TQ-13 ships dynamic reciters, durable audio jobs, cache, and Studio source tabs", async () => {
+  const [audio, queue, worker, platform, server, page, migration, compose] = await Promise.all([
+    read("../server/quran-audio.mjs"),
+    read("../server/quran-audio-queue.mjs"),
+    read("../server/quran-audio-worker.mjs"),
+    read("../server/platform-api.mjs"),
+    read("../server/index.mjs"),
+    read("../app/page.tsx"),
+    read("../server/migrations/004-quran-audio-jobs.sql"),
+    read("../docker-compose.coolify.yml"),
+  ]);
+  assert.match(audio, /edition\/format\/audio/);
+  assert.match(audio, /ffprobe/);
+  assert.match(audio, /ffmpeg/);
+  assert.match(audio, /ALLOWED_AUDIO_HOSTS/);
+  assert.match(queue, /tq-quran-audio/);
+  assert.match(worker, /sourceKey/);
+  assert.match(platform, /\/api\/v1\/quran-audio\/jobs/);
+  assert.match(server, /\/media-api\/quran\/audio\/reciters/);
+  assert.match(page, /Sumber Qur/);
+  assert.match(page, /Siapkan audio dan ayat/);
+  assert.match(page, /Tanpa Explorer/);
+  assert.match(migration, /tq_quran_audio_jobs/);
+  assert.match(compose, /server\/quran-audio-worker\.mjs/);
 });
 
 test("production platform ships authentication, immutable audit, storage, and recovery", async () => {
