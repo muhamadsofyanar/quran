@@ -67,4 +67,8 @@ test("TQ-07 sampai TQ-11 menyediakan pustaka media, retry render, dan indeks 114
   assert.match(page, /Pustaka Media Qur/);
   assert.match(page, /Batch 3 rasio/);
   assert.match(page, /renderScope/);
+  assert.match(page, /fetch\(\"\/media-api\/capabilities\"/);
+  assert.match(page, /fetch\(\"\/api\/v1\/auth\/session\"/);
+  assert.match(page, /setSessionMode\(account\.authenticated \? \"authenticated\" : \"guest\"\)/);
+  assert.match(page, /refreshMediaLibrary\(\)/);
 });

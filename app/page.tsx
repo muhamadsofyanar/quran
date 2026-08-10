@@ -631,6 +631,263 @@ export default function Home() {
     setToast(`${uploaded} dari ${Math.min(files.length, 200)} media berhasil ditambahkan.`);
   }
 
+
+  // @phase TQ-11 — runtime bootstrap and persistence lifecycle.
+  // Keep this block covered by tests: without it sessionMode remains "checking"
+  // and the production UI never leaves LoadingScreen.
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const bootstrapTimeout = window.setTimeout(() => controller.abort(), 12_000);
+
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as { projects?: Project[]; renderJobs?: RenderJob[] };
+        if (parsed.projects?.length) {
+          setProjects(parsed.projects);
+          setActiveProjectId(parsed.projects[0].id);
+          setSelectedSegmentId(parsed.projects[0].segments?.[0]?.id || "");
+        }
+        if (parsed.renderJobs) setRenderJobs(parsed.renderJobs);
+      }
+
+      const hash = window.location.hash.replace("#", "") as View;
+      if (navItems.some((item) => item.id === hash) || hash === "settings") setView(hash);
+    } catch {
+      // Invalid local drafts must never block startup.
+    }
+
+    hydrated.current = true;
+
+    const bootstrap = async () => {
+      try {
+        const response = await fetch("/media-api/capabilities", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("Capabilities endpoint unavailable.");
+        const payload = await response.json() as ServerCapabilities;
+        if (cancelled) return;
+        setCapabilities(payload);
+
+        void fetch("/media-api/quran/content/sources", { cache: "no-store" })
+          .then((sourceResponse) => sourceResponse.ok ? sourceResponse.json() : Promise.reject())
+          .then((content) => { if (!cancelled) setContentSources(content.sources || []); })
+          .catch(() => {});
+
+        if (payload.quran?.available) {
+          void fetch("/media-api/quran/surahs", { cache: "no-store" })
+            .then((surahResponse) => surahResponse.ok ? surahResponse.json() : Promise.reject())
+            .then((data) => {
+              if (cancelled || !Array.isArray(data.surahs)) return;
+              setQuranRows(data.surahs.map((surah: {
+                number?: number;
+                nameLatin?: string;
+                nameArabic?: string;
+                nameTranslation?: string;
+                ayahCount?: number;
+              }) => ({
+                number: Number(surah.number) || 0,
+                name: String(surah.nameLatin || `Surah ${surah.number || ""}`),
+                arabic: String(surah.nameArabic || ""),
+                meaning: String(surah.nameTranslation || ""),
+                ayahs: Number(surah.ayahCount) || 0,
+              })).filter((surah: QuranLibraryRow) => surah.number >= 1 && surah.number <= 114));
+            })
+            .catch(() => {});
+        }
+
+        if (!payload.persistence?.configured) {
+          setSessionMode("local");
+          return;
+        }
+
+        const sessionResponse = await fetch("/api/v1/auth/session", { cache: "no-store", signal: controller.signal });
+        if (!sessionResponse.ok) throw new Error("Session endpoint unavailable.");
+        const account = await sessionResponse.json() as SessionInfo;
+        if (cancelled) return;
+        setSession(account);
+        setSessionMode(account.authenticated ? "authenticated" : "guest");
+      } catch {
+        if (cancelled) return;
+        setCapabilities({ ffmpeg: false, transcription: false, quran: { available: false } });
+        // A failed bootstrap must fail open to the local workspace instead of
+        // trapping the browser on the loading screen forever.
+        setSessionMode("local");
+      }
+    };
+
+    void bootstrap().finally(() => window.clearTimeout(bootstrapTimeout));
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(bootstrapTimeout);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    let cancelled = false;
+
+    fetch("/api/v1/projects", { headers: { "x-tq-workspace": session.workspaces[0].id }, cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Proyek server tidak dapat dimuat.");
+        if (cancelled) return;
+        const loaded = (payload.projects || []).map((project: Project & { version?: number }) => ({
+          ...project,
+          serverVersion: project.version || project.serverVersion,
+        }));
+        serverSnapshots.current = new Map(loaded.map((project: Project) => [
+          project.id,
+          JSON.stringify({ title: project.title, state: projectState(project) }),
+        ]));
+        if (loaded.length) {
+          setProjects(loaded);
+          setActiveProjectId(loaded[0].id);
+          setSelectedSegmentId(loaded[0].segments?.[0]?.id || "");
+          setRatio(loaded[0].ratio || "16:9");
+        } else {
+          setProjects([]);
+        }
+      })
+      .catch((error) => { if (!cancelled) setToast(error.message); });
+
+    return () => { cancelled = true; };
+  }, [session, sessionMode]);
+
+  useEffect(() => {
+    if (!hydrated.current) return;
+    setSaveState("saving");
+    const timer = window.setTimeout(() => {
+      const persistentJobs = renderJobs.map((job) => ({ ...job, outputUrl: undefined }));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ projects, renderJobs: persistentJobs }));
+      setSaveState("saved");
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [projects, renderJobs]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    const dirty = projects.filter((project) =>
+      project.serverVersion &&
+      serverSnapshots.current.get(project.id) !== JSON.stringify({ title: project.title, state: projectState(project) }),
+    );
+    if (!dirty.length) return;
+
+    setSaveState("saving");
+    const timer = window.setTimeout(async () => {
+      for (const project of dirty) {
+        const snapshot = JSON.stringify({ title: project.title, state: projectState(project) });
+        try {
+          const response = await fetch(`/api/v1/projects/${project.id}`, {
+            method: "PUT",
+            headers: {
+              "content-type": "application/json",
+              "if-match": String(project.serverVersion),
+              "x-tq-workspace": session.workspaces![0].id,
+            },
+            body: JSON.stringify({ title: project.title, version: project.serverVersion, state: projectState(project) }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Autosave server gagal.");
+          serverSnapshots.current.set(project.id, snapshot);
+          setProjects((items) => items.map((item) => item.id === project.id ? { ...item, serverVersion: payload.project.version } : item));
+        } catch (error) {
+          setToast(error instanceof Error ? error.message : "Autosave server gagal.");
+        }
+      }
+      setSaveState("saved");
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [projects, session, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    void refreshMediaLibrary();
+  }, [session, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !activeProject?.audioAssetId) return;
+    if (activeProject.audioAssetId === loadedAudioAssetId) return;
+    void loadAudioAsset(activeProject.audioAssetId, true);
+  }, [activeProject?.audioAssetId, activeProject?.id, loadedAudioAssetId, mediaAssets, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !activeProject?.backgroundAssetId) return;
+    if (activeProject.backgroundAssetId === loadedBackgroundAssetId) return;
+    void loadBackgroundAsset(activeProject.backgroundAssetId, true);
+  }, [activeProject?.backgroundAssetId, activeProject?.id, loadedBackgroundAssetId, mediaAssets, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !capabilities.queue?.healthy) return;
+    let active = true;
+    const refresh = () => fetch("/api/v1/render-jobs", {
+      headers: { "x-tq-workspace": session.workspaces![0].id },
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Antrean render tidak dapat dimuat.");
+        if (!active) return;
+        const jobs = (payload.jobs || []).map((job: {
+          id: string;
+          project_id: string;
+          status: RenderJob["status"];
+          progress: number;
+          preset?: { title?: string; ratio?: Ratio; resolution?: string };
+          output_asset_id?: string;
+          error?: string;
+        }) => ({
+          id: job.id,
+          projectId: job.project_id,
+          title: job.preset?.title || "Video Qur'an",
+          ratio: job.preset?.ratio || "16:9",
+          resolution: job.preset?.resolution || "1080p",
+          status: job.status,
+          progress: job.progress,
+          format: "MP4" as const,
+          outputUrl: job.output_asset_id ? `/api/v1/assets/${job.output_asset_id}/download?workspace=${session.workspaces![0].id}` : undefined,
+          error: job.error,
+        }));
+        setRenderJobs(jobs);
+        if (jobs.some((job: RenderJob) => job.status === "complete")) void refreshMediaLibrary();
+      })
+      .catch(() => {});
+
+    void refresh();
+    const timer = window.setInterval(refresh, 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [capabilities.queue?.healthy, session, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0] || !activeProject?.serverVersion) return;
+    fetch(`/api/v1/comments?projectId=${encodeURIComponent(activeProject.id)}`, {
+      headers: { "x-tq-workspace": session.workspaces[0].id },
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (response.ok) setComments(payload.comments || []);
+      })
+      .catch(() => {});
+  }, [activeProject?.id, activeProject?.serverVersion, session, sessionMode]);
+
+  useEffect(() => {
+    if (sessionMode !== "authenticated" || !session.workspaces?.[0]) return;
+    fetch("/api/v1/members", { headers: { "x-tq-workspace": session.workspaces[0].id }, cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (response.ok) setMembers(payload.members || []);
+      })
+      .catch(() => {});
+  }, [session, sessionMode]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(undefined), 3200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   function navigate(next: View) {
     setView(next);
     window.location.hash = next;

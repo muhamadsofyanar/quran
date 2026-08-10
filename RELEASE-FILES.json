@@ -1,5 +1,5 @@
 {
-  "release": "1.1.0",
+  "release": "1.1.0-hotfix-loading",
   "phase": "TQ-11",
   "generatedAt": "2026-08-10",
   "files": [
@@ -70,8 +70,8 @@
     },
     {
       "path": "app/page.tsx",
-      "bytes": 129303,
-      "sha256": "f1a94cd2285d2829db24c8f471a9db14617482d5da01d1db5bcaa84e77904117"
+      "bytes": 140195,
+      "sha256": "4eab8a8cbd264790ae6f1b6a8132513d75b97823de7f294f909d60fc1a91c3fe"
     },
     {
       "path": "build/sites-vite-plugin.ts",
@@ -97,6 +97,11 @@
       "path": "docs/FUNCTION-MATRIX.md",
       "bytes": 1674,
       "sha256": "ef7bc4b3443cdc15b92e79bffec0ebd302f98a02b602fecae71d1b94873234df"
+    },
+    {
+      "path": "docs/HOTFIX-v1.1.0-loading.md",
+      "bytes": 1072,
+      "sha256": "3e11bfbc6b87d4dbafba0df6c7effa0fa14bb7272f3aac9112ac6f28cfd01739"
     },
     {
       "path": "docs/OPERATIONS.md",
@@ -295,8 +300,8 @@
     },
     {
       "path": "tests/deployment.test.mjs",
-      "bytes": 3409,
-      "sha256": "8a3d2be8b86cfb0081a162d7b6cecb4b141741b122445255c1bb4f47d28803dd"
+      "bytes": 3680,
+      "sha256": "c1c0e4d45f0af57dc926bc92a31166c2128153788f288629d60195220e839be3"
     },
     {
       "path": "tests/media-core.test.mjs",
