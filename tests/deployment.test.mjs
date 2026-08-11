@@ -46,6 +46,18 @@ test("TQ-13 ships dynamic reciters, durable audio jobs, cache, and Studio source
   assert.match(compose, /server\/quran-audio-worker\.mjs/);
 });
 
+test("Studio restores missing Arabic text from the canonical corpus", async () => {
+  const [page, helpers, store] = await Promise.all([
+    read("../app/page.tsx"),
+    read("../lib/quran-content.mjs"),
+    read("../server/quran-store.mjs"),
+  ]);
+  assert.match(page, /hydrateSegmentsArabic/);
+  assert.match(page, /Memuat teks Arab/);
+  assert.match(helpers, /mergeArabicIntoSegments/);
+  assert.match(store, /cleanQuranContentText/);
+});
+
 test("production platform ships authentication, immutable audit, storage, and recovery", async () => {
   const [auth, storage, platform, migration] = await Promise.all([
     read("../server/auth.mjs"), read("../server/storage.mjs"), read("../server/platform-api.mjs"), read("../server/migrations/001-production.sql"),

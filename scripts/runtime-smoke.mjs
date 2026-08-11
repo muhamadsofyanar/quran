@@ -41,7 +41,7 @@ async function waitForServer() {
 
 try {
   const health = await waitForServer();
-  if (health.version !== "1.3.0" || health.ffmpeg !== true) throw new Error(`Health tidak sesuai: ${JSON.stringify(health)}`);
+  if (health.version !== "1.3.1" || health.ffmpeg !== true) throw new Error(`Health tidak sesuai: ${JSON.stringify(health)}`);
   await run("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i", "color=c=#0b4338:s=320x180:d=1",

@@ -58,7 +58,7 @@ test("health endpoint identifies the independent service", async () => {
   const body = await response.json();
   assert.equal(body.status, "ok");
   assert.equal(body.service, "taysriul-qurani");
-  assert.equal(body.version, "1.3.0");
+  assert.equal(body.version, "1.3.1");
 });
 
 test("phase manifest tracks the deployment and product files", async () => {
@@ -68,7 +68,7 @@ test("phase manifest tracks the deployment and product files", async () => {
 
   assert.equal(manifest.project, "Taysriul Qur'ani");
   assert.equal(manifest.current_phase, "TQ-13");
-  assert.equal(manifest.version, "1.3.0");
+  assert.equal(manifest.version, "1.3.1");
   assert.equal(manifest.progress_percent, 100);
   assert.ok(manifest.phases["TQ-03"].files.includes("server/database.mjs"));
   assert.ok(manifest.phases["TQ-05"].files.includes("server/render-worker.mjs"));

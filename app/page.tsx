@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { buildAss, buildSrt, buildVtt } from "../lib/media-core.mjs";
+import { cleanQuranContentText, mergeArabicIntoSegments } from "../lib/quran-content.mjs";
 
 type View = "home" | "projects" | "studio" | "media" | "quran" | "renders" | "settings";
 type StudioStep = "source" | "sync" | "design" | "review" | "render";
@@ -386,6 +387,18 @@ function projectState(project: Project) {
   };
 }
 
+function normalizeProjectContent(project: Project): Project {
+  return {
+    ...project,
+    segments: (Array.isArray(project.segments) ? project.segments : []).map((segment) => ({
+      ...segment,
+      arabic: String(segment.arabic || ""),
+      translation: cleanQuranContentText(segment.translation),
+      tafsir: segment.tafsir ? cleanQuranContentText(segment.tafsir) : segment.tafsir,
+    })),
+  };
+}
+
 function canvasDimensions(ratio: Ratio, resolution: string) {
   const scale = resolution === "2160p (4K)" ? 2 : resolution === "1440p" ? 1.34 : 1;
   const base = ratio === "16:9" ? [1280, 720] : ratio === "9:16" ? [720, 1280] : [900, 900];
@@ -496,6 +509,7 @@ export default function Home() {
   const hydrated = useRef(false);
   const serverSnapshots = useRef(new Map<string, string>());
   const contentHydrationRef = useRef(new Set<string>());
+  const arabicHydrationRef = useRef(new Set<string>());
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? projects[0],
     [activeProjectId, projects],
@@ -857,9 +871,10 @@ export default function Home() {
       if (stored) {
         const parsed = JSON.parse(stored) as { projects?: Project[]; renderJobs?: RenderJob[] };
         if (parsed.projects?.length) {
-          setProjects(parsed.projects);
+          const restoredProjects = parsed.projects.map((project: Project) => normalizeProjectContent(project));
+          setProjects(restoredProjects);
           setActiveProjectId(parsed.projects[0].id);
-          setSelectedSegmentId(parsed.projects[0].segments?.[0]?.id || "");
+          setSelectedSegmentId(restoredProjects[0].segments?.[0]?.id || "");
         }
         if (parsed.renderJobs) setRenderJobs(parsed.renderJobs);
       }
@@ -1011,7 +1026,7 @@ export default function Home() {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Proyek server tidak dapat dimuat.");
         if (cancelled) return;
-        const loaded = (payload.projects || []).map((project: Project & { version?: number }) => ({
+        const loaded = (payload.projects || []).map((project: Project & { version?: number }) => normalizeProjectContent({
           ...project,
           serverVersion: project.version || project.serverVersion,
         }));
@@ -1131,6 +1146,49 @@ export default function Home() {
     void fetchContentForSegment(tafsirSource, selectedSegment, "tafsir", true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSegmentId, tafsirSource, showTafsir]);
+
+  useEffect(() => {
+    if (!activeProject?.segments?.length || !capabilities.quran.available) return;
+    const missing = activeProject.segments.filter((segment) =>
+      !String(segment.arabic || "").trim() &&
+      Number.isInteger(segment.surahNumber) &&
+      segment.surahNumber >= 1 &&
+      segment.surahNumber <= 114 &&
+      Number.isInteger(segment.ayah) &&
+      segment.ayah >= 1
+    );
+    if (!missing.length) return;
+
+    const references = missing.map((segment) => `${segment.surahNumber}:${segment.ayah}`).join(",");
+    const key = `${activeProject.id}|${references}`;
+    if (arabicHydrationRef.current.has(key)) return;
+    arabicHydrationRef.current.add(key);
+
+    let cancelled = false;
+    void hydrateSegmentsArabic(activeProject.segments).then((hydrated) => {
+      if (cancelled) return;
+      const hydratedById = new Map(hydrated.map((segment) => [segment.id, segment]));
+      const changed = hydrated.some((segment, index) => segment.arabic !== activeProject.segments[index]?.arabic);
+      if (!changed) {
+        arabicHydrationRef.current.delete(key);
+        return;
+      }
+      setProjects((items) => items.map((project) => project.id === activeProject.id ? {
+        ...project,
+        segments: project.segments.map((segment) => {
+          const corpusSegment = hydratedById.get(segment.id);
+          return !String(segment.arabic || "").trim() && corpusSegment?.arabic
+            ? { ...segment, surah: corpusSegment.surah, arabic: corpusSegment.arabic, confidence: corpusSegment.confidence }
+            : segment;
+        }),
+        updatedAt: new Date().toISOString(),
+      } : project));
+    }).catch(() => {
+      arabicHydrationRef.current.delete(key);
+    });
+
+    return () => { cancelled = true; };
+  }, [activeProject?.id, activeProject?.segments, capabilities.quran.available]);
 
   useEffect(() => {
     if (!activeProject?.segments?.length) return;
@@ -1556,6 +1614,22 @@ export default function Home() {
       if (strict) throw error;
       return segments;
     }
+  }
+
+  async function hydrateSegmentsArabic(segments: Segment[]) {
+    const surahNumbers = [...new Set(segments
+      .filter((segment) => !String(segment.arabic || "").trim())
+      .map((segment) => Number(segment.surahNumber))
+      .filter((number) => Number.isInteger(number) && number >= 1 && number <= 114))];
+    if (!surahNumbers.length) return segments;
+
+    const surahs = await Promise.all(surahNumbers.map(async (number) => {
+      const response = await fetch(`/media-api/quran/surah?number=${number}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `Surah ${number} tidak dapat dimuat dari korpus.`);
+      return payload;
+    }));
+    return mergeArabicIntoSegments(segments, surahs) as Segment[];
   }
 
   async function selectTranslationSource(source: string) {
@@ -2402,7 +2476,7 @@ export default function Home() {
                           fontWeight: 400,
                         }}
                       >
-                        {selectedSegment.arabic}<span className="ayah-marker">{selectedSegment.ayah}</span>
+                        {selectedSegment.arabic || (capabilities.quran.available ? "Memuat teks Arab…" : "Teks Arab belum tersedia")}<span className="ayah-marker">{selectedSegment.ayah}</span>
                       </p>
                       {showTranslation && <><span className="translation-rule"/><small>{selectedSegment.translation || (contentBusy ? "Memuat terjemahan…" : "")}</small></>}
                       {showTafsir && selectedSegment.tafsir && <small className="canvas-tafsir">{selectedSegment.tafsir}</small>}
@@ -2545,7 +2619,7 @@ export default function Home() {
 
               <section className="settings-content panel">
                 {settingsTab === "identity" && <>
-                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.3.0"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
+                  <div className="settings-section"><span className="section-kicker">Identitas mandiri</span><h2>Taysriul Qur&apos;ani</h2><p>Proyek baru yang tidak berbagi akun, database, media, maupun deployment dengan Sullamul Hifz.</p><div className="settings-grid"><label><span>Nama aplikasi</span><input value="Taysriul Qur'ani" readOnly/></label><label><span>Domain produksi</span><input value="taysriulqurani.id" readOnly/></label><label><span>Versi produksi</span><input value={capabilities.version || "1.3.1"} readOnly/></label><label><span>Zona waktu</span><input value="Asia/Jakarta" readOnly/></label></div></div>
                   {sessionMode === "authenticated" && <div className="settings-section"><span className="section-kicker">Kolaborasi</span><h2>Anggota workspace</h2><p>Editor mengubah proyek, pemeriksa memberi komentar dan persetujuan, sedangkan viewer hanya membaca.</p><div className="member-list">{members.map((member) => <div key={member.id}><span>{member.display_name?.slice(0,2).toUpperCase() || "U"}</span><div><strong>{member.display_name}</strong><small>{member.email}</small></div><em>{member.role}</em></div>)}</div>{session.workspaces?.[0]?.role === "owner" && <form className="member-form" onSubmit={addWorkspaceMember}><input type="email" required value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} placeholder="Email pengguna yang sudah terdaftar"/><select value={memberRole} onChange={(event) => setMemberRole(event.target.value as "editor" | "reviewer" | "viewer")}><option value="editor">Editor</option><option value="reviewer">Pemeriksa</option><option value="viewer">Viewer</option></select><button className="primary-button"><Icon name="plus"/> Tambahkan</button></form>}</div>}
                 </>}
 

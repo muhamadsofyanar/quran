@@ -1,4 +1,4 @@
-# Matriks Fungsi v1.3.0
+# Matriks Fungsi v1.3.1
 
 | Fungsi produksi | Implementasi | Status source |
 |---|---|---|

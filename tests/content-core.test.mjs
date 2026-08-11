@@ -4,6 +4,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { getContentEntries, getContentEntry, listContentSources, normalizeQuranEncCatalog } from "../server/quran-store.mjs";
+import { cleanQuranContentText, mergeArabicIntoSegments } from "../lib/quran-content.mjs";
+
+test("missing Arabic text is restored from the canonical surah corpus", () => {
+  const segments = [
+    { id: "one", surah: "Al-Fatihah", surahNumber: 1, ayah: 4, arabic: "", confidence: 0 },
+    { id: "two", surah: "Al-Fatihah", surahNumber: 1, ayah: 5, arabic: "teks manual", confidence: 20 },
+  ];
+  const hydrated = mergeArabicIntoSegments(segments, [{
+    number: 1,
+    nameLatin: "Al-Fatihah",
+    ayahs: [
+      { ayah: 4, arabic: "مَٰلِكِ يَوْمِ ٱلدِّينِ" },
+      { ayah: 5, arabic: "إِيَّاكَ نَعْبُدُ" },
+    ],
+  }]);
+  assert.equal(hydrated[0].arabic, "مَٰلِكِ يَوْمِ ٱلدِّينِ");
+  assert.equal(hydrated[0].confidence, 100);
+  assert.equal(hydrated[1].arabic, "teks manual");
+  assert.equal(hydrated[1].confidence, 20);
+});
+
+test("Quran content cleanup removes empty footnote artifacts without changing prose", () => {
+  assert.equal(cleanQuranContentText("Pemilik hari pembalasan.[]"), "Pemilik hari pembalasan.");
+  assert.equal(cleanQuranContentText("Ayat <sup foot_note=1>[1]</sup> pilihan"), "Ayat pilihan");
+});
 
 test("preferred Indonesian translation and tafsir sources are enabled", async () => {
   const before = process.env.TQ_QURANENC_DISCOVERY;

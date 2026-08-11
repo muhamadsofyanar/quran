@@ -13,7 +13,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from faster_whisper import WhisperModel
 
 
-app = FastAPI(title="Taysriul Qur'ani Local Transcriber", version="1.3.0")
+app = FastAPI(title="Taysriul Qur'ani Local Transcriber", version="1.3.1")
 transcription_lock = asyncio.Lock()
 
 

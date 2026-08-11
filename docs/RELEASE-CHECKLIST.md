@@ -1,4 +1,4 @@
-# Checklist Rilis v1.3.0
+# Checklist Rilis v1.3.1
 
 ## Mesin dasar
 

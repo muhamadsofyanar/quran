@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { alignTranscriptSequence, matchTranscript } from "../lib/media-core.mjs";
+import { cleanQuranContentText } from "../lib/quran-content.mjs";
 
 const EXPECTED = { surahs: 114, ayahs: 6236, juz: 30, pages: 604, rubus: 240 };
 const DEFAULT_SOURCE = "https://api.alquran.cloud/v1/quran/quran-uthmani";
@@ -352,7 +353,7 @@ function normalizeQuranEncSurahPayload(payload, source, surahNumber) {
     .map((item) => ({
       surahNumber: Number(item?.sura ?? item?.surah ?? surahNumber),
       ayah: Number(item?.aya ?? item?.ayah),
-      text: String(item?.translation ?? item?.text ?? ""),
+      text: cleanQuranContentText(item?.translation ?? item?.text ?? ""),
       footnotes: item?.footnotes ?? null,
       edition: source.edition,
       kind: source.kind,
@@ -409,7 +410,12 @@ async function readCachedQuranEncSurah(source, surahNumber) {
   try {
     const [raw, info] = await Promise.all([readFile(target, "utf8"), stat(target)]);
     const document = JSON.parse(raw);
-    if (Date.now() - info.mtimeMs <= CONTENT_CACHE_MAX_AGE && Array.isArray(document.entries)) return document;
+    if (Date.now() - info.mtimeMs <= CONTENT_CACHE_MAX_AGE && Array.isArray(document.entries)) {
+      return {
+        ...document,
+        entries: document.entries.map((entry) => ({ ...entry, text: cleanQuranContentText(entry?.text) })),
+      };
+    }
   } catch {}
   return null;
 }

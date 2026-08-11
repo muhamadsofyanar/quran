@@ -671,7 +671,7 @@ async function handleMediaApi(
           "taysriul-qurani",
 
         version:
-          "1.3.0",
+          "1.3.1",
 
         ffmpeg:
           ffmpegAvailable,
@@ -735,7 +735,7 @@ async function handleMediaApi(
           database.healthy,
 
         version:
-          "1.3.0",
+          "1.3.1",
       }
     );
   }
